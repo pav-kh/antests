@@ -63,3 +63,28 @@ def test_system_prompt_mentions_quality_rules():
     p = build_generation_system_prompt()
     assert "однознач" in p.lower() or "ровно один" in p.lower()
     assert "mermaid" in p.lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_raises_on_empty_content():
+    import pytest
+    from app.generation.openai_client import OpenAIClient, OpenAIResponseError
+
+    class _NoneMsg:
+        content = None
+        finish_reason = "content_filter"
+    class _Choice:
+        message = _NoneMsg()
+        finish_reason = "content_filter"
+    class _Completion:
+        choices = [_Choice()]
+    class _Completions:
+        async def create(self, **kw): return _Completion()
+    class _Chat:
+        completions = _Completions()
+    class _Client:
+        chat = _Chat()
+
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v", _client=_Client())
+    with pytest.raises(OpenAIResponseError):
+        await client.generate_batch("base", "exam", [("data", 1)])

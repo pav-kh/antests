@@ -74,3 +74,35 @@ async def test_daily_limit_blocks_after_threshold(client):
         assert r.status_code == 201
     blocked = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
     assert blocked.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_session_marked_failed_when_client_construction_raises(client, monkeypatch):
+    import asyncio
+
+    from app.db.base import engine
+    from app.generation import router as gen_router
+
+    # The background task (and its _mark_session_failed fallback) uses the app's
+    # own pooled engine, not the per-test NullPool engine. Across the test
+    # suite each test runs in a fresh event loop, so dispose the pool here to
+    # drop any connection bound to a previous loop before this test's
+    # background task opens a fresh SessionLocal(). (Production keeps one loop;
+    # this is purely test isolation.)
+    await engine.dispose()
+
+    def _boom():
+        raise RuntimeError("bad OPENAI key")
+
+    monkeypatch.setattr(gen_router, "build_openai_client", _boom)
+    await _register(client, "peggy")
+    resp = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+    assert resp.status_code == 201
+    sid = resp.json()["id"]
+    # Poll until the session resolves to failed (must NOT stay generating forever)
+    for _ in range(50):
+        st = await client.get(f"/sessions/{sid}/status")
+        if st.json()["status"] == "failed":
+            break
+        await asyncio.sleep(0.05)
+    assert st.json()["status"] == "failed"

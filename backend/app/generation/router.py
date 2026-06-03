@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,12 @@ from app.generation.openai_client import OpenAIClient
 
 router = APIRouter(tags=["sessions"])
 
+logger = logging.getLogger(__name__)
+
+# Strong references to in-flight background generation tasks. Without this the
+# event loop keeps only a weak ref and the task may be GC'd mid-flight.
+_background_tasks: set[asyncio.Task] = set()
+
 
 class CreateSessionRequest(BaseModel):
     level: str
@@ -30,11 +37,30 @@ def build_openai_client():
     )
 
 
+async def _mark_session_failed(session_id) -> None:
+    from app.db.models import TestSession
+    try:
+        async with SessionLocal() as db:
+            session = await db.get(TestSession, session_id)
+            if session is not None and session.status not in ("ready", "finished"):
+                session.status = "failed"
+                await db.commit()
+    except Exception:
+        logger.exception("Failed to mark session %s as failed", session_id)
+
+
 async def _run_generation(session_id, plan):
-    settings = get_settings()
-    async with SessionLocal() as db:
-        gen = Generator(db, build_openai_client(), batch_size=settings.generation_batch_size)
-        await gen.run(session_id, plan)
+    try:
+        settings = get_settings()
+        client = build_openai_client()
+        async with SessionLocal() as db:
+            gen = Generator(
+                db, client, batch_size=settings.generation_batch_size
+            )
+            await gen.run(session_id, plan)
+    except Exception:
+        logger.exception("Background generation failed for session %s", session_id)
+        await _mark_session_failed(session_id)
 
 
 @router.post("/sessions", status_code=status.HTTP_201_CREATED)
@@ -56,7 +82,9 @@ async def create_session(
     except service.DailyLimitExceeded:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Daily session limit reached")
 
-    asyncio.create_task(_run_generation(session.id, plan))
+    task = asyncio.create_task(_run_generation(session.id, plan))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"id": str(session.id), "status": session.status,
             "total_questions": session.total_questions}
 

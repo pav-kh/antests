@@ -6,6 +6,21 @@ from app.generation.schemas import GeneratedBatch, GeneratedQuestion, Validation
 from app.generation.topics import get_topic
 
 
+class OpenAIResponseError(Exception):
+    pass
+
+
+def _parse_json_content(resp):
+    content = resp.choices[0].message.content
+    if not content:
+        finish = getattr(resp.choices[0], "finish_reason", "unknown")
+        raise OpenAIResponseError(f"empty response content (finish_reason={finish})")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise OpenAIResponseError(f"non-JSON response: {e}") from e
+
+
 def build_generation_system_prompt() -> str:
     return (
         "Ты — экзаменатор сертификации системных аналитиков IBS. "
@@ -105,7 +120,7 @@ class OpenAIClient:
                 },
             },
         )
-        data = json.loads(resp.choices[0].message.content)
+        data = _parse_json_content(resp)
         return GeneratedBatch(**data)
 
     async def validate_question(self, q: GeneratedQuestion) -> ValidationVerdict:
@@ -130,5 +145,5 @@ class OpenAIClient:
                 },
             },
         )
-        data = json.loads(resp.choices[0].message.content)
+        data = _parse_json_content(resp)
         return ValidationVerdict(**data)
