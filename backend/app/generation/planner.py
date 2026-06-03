@@ -4,12 +4,22 @@ LEVEL_TOTALS = {"base": 80, "specialist": 120}
 
 
 def _largest_remainder(weights: dict[str, float], total: int) -> list[tuple[str, int]]:
-    """Apportion `total` across keys by weight, guaranteeing the sum equals total."""
-    raw = {k: w * total for k, w in weights.items()}
+    """Apportion `total` across keys by weight, guaranteeing the sum equals total.
+
+    Weights are normalized defensively so the sum invariant holds even if the
+    caller passes weights that do not sum to 1.0.
+    """
+    weight_sum = sum(weights.values())
+    if weight_sum <= 0:
+        # Degenerate input: distribute evenly.
+        norm = {k: 1 / len(weights) for k in weights} if weights else {}
+    else:
+        norm = {k: w / weight_sum for k, w in weights.items()}
+    raw = {k: w * total for k, w in norm.items()}
     floored = {k: int(v) for k, v in raw.items()}
     assigned = sum(floored.values())
     remainder = total - assigned
-    frac_order = sorted(weights, key=lambda k: raw[k] - floored[k], reverse=True)
+    frac_order = sorted(norm, key=lambda k: raw[k] - floored[k], reverse=True)
     for k in frac_order[:remainder]:
         floored[k] += 1
     return [(k, c) for k, c in floored.items() if c > 0]
