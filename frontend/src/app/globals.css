@@ -1,0 +1,25 @@
+:root {
+  --ibs-blue: #2f6fed;
+  --ibs-navy: #1f3a5f;
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --border: #e6ebf2;
+  --text: #1d2733;
+  --muted: #5a6878;
+  --locked: #f0d7d7;
+  --locked-text: #b06a6a;
+  --ok: #18b27e;
+  --err: #e0556b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+.btn { padding: 10px 22px; border-radius: 8px; border: none; background: var(--ibs-blue);
+  color: #fff; font-size: 14px; cursor: pointer; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-ghost { background: #fff; border: 1px solid #cdd6e2; color: #41526a; }
+.input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+.label { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.error { color: var(--err); font-size: 14px; }
+a { color: var(--ibs-blue); }
