@@ -15,19 +15,8 @@ class DailyLimitExceeded(Exception):
 
 
 async def _load_competency(db: AsyncSession, user_id, level) -> dict[str, float]:
-    try:
-        from app.db.models import TopicCompetency  # type: ignore
-    except ImportError:
-        return {}
-    rows = (
-        await db.execute(
-            select(TopicCompetency).where(
-                TopicCompetency.user_id == user_id,
-                TopicCompetency.level == level,
-            )
-        )
-    ).scalars().all()
-    return {r.topic_id: float(r.accuracy) for r in rows}
+    from app.assessment.competency import load_competency
+    return await load_competency(db, user_id, level)
 
 
 async def create_session(
