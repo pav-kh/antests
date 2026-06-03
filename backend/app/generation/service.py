@@ -23,7 +23,10 @@ async def create_session(
     db: AsyncSession, user_id, level: str, mode: str,
     daily_limit: int, adaptive_count: int, weak_threshold: float,
 ) -> tuple[TestSession, list]:
-    today = dt.date.today()
+    # Use the UTC calendar date so the daily-limit day is deterministic
+    # regardless of host timezone, and matches the refund in router.py, which
+    # derives the day from created_at (stored in UTC by the DB).
+    today = dt.datetime.now(dt.timezone.utc).date()
     if not await auth_service.is_within_daily_limit(db, user_id, today, daily_limit):
         raise DailyLimitExceeded()
 

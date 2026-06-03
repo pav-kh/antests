@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 import logging
 import uuid
 
@@ -48,8 +49,13 @@ async def _mark_session_failed(session_id) -> None:
                 await db.commit()
                 # Refund the daily-limit slot: a failed generation must not
                 # count against the user's daily allowance (product decision).
+                # Use the UTC calendar date of created_at so the refunded day
+                # matches the increment in service.create_session, which also
+                # uses the UTC date. Normalize via astimezone(UTC) so this is
+                # correct whether or not the driver returns a tz-aware value.
                 await auth_service.decrement_usage(
-                    db, session.user_id, session.created_at.date()
+                    db, session.user_id,
+                    session.created_at.astimezone(dt.timezone.utc).date(),
                 )
     except Exception:
         logger.exception("Failed to mark session %s as failed", session_id)
@@ -69,8 +75,11 @@ async def _run_generation(session_id, plan):
             from app.auth import service as auth_service
             session = await db.get(TestSession, session_id)
             if session is not None and session.status == "failed":
+                # Refund on the UTC date of created_at to match the increment
+                # in service.create_session (see _mark_session_failed above).
                 await auth_service.decrement_usage(
-                    db, session.user_id, session.created_at.date()
+                    db, session.user_id,
+                    session.created_at.astimezone(dt.timezone.utc).date(),
                 )
     except Exception:
         logger.exception("Background generation failed for session %s", session_id)

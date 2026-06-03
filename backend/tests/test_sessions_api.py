@@ -104,6 +104,61 @@ async def test_failed_generation_refunds_daily_slot(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_failed_generation_refunds_exactly_one_slot(client, db_session, monkeypatch):
+    # Prove the refund fires exactly once (not zero, not twice). decrement_usage
+    # floors at 0, so a base of 0 would mask an over-refund; seed a non-zero base.
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from app.auth import service as auth_service
+    from app.db.base import engine
+    from app.db.models import User
+    from app.generation import router as gen_router
+
+    # Background task uses the app's pooled engine; dispose so its SessionLocal()
+    # binds to this test's event loop (see sibling failed-generation tests).
+    await engine.dispose()
+
+    def _boom():
+        raise RuntimeError("bad key")
+
+    monkeypatch.setattr(gen_router, "build_openai_client", _boom)
+
+    await _register(client, "wade")
+    user = (
+        await db_session.execute(select(User).where(User.login == "wade"))
+    ).scalar_one()
+    today = dt.datetime.now(dt.timezone.utc).date()
+    # Seed the counter to a known non-zero base so an over-refund can't be
+    # masked by the floor-at-zero in decrement_usage.
+    await auth_service.increment_usage(db_session, user.id, today)  # base = 1
+    base = await auth_service.get_usage_count(db_session, user.id, today)
+
+    resp = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+    assert resp.status_code == 201
+    sid = resp.json()["id"]
+    for _ in range(50):
+        st = await client.get(f"/sessions/{sid}/status")
+        if st.json()["status"] == "failed":
+            break
+        await asyncio.sleep(0.05)
+    assert st.json()["status"] == "failed"
+
+    # create_session incremented to base+1, then the failure refunded exactly
+    # one -> back to base. Poll to avoid a race between the status flip and the
+    # refund commit (they happen in the same background task, but ordering of
+    # the commit relative to the observed status flip is not guaranteed).
+    final = None
+    for _ in range(50):
+        final = await auth_service.get_usage_count(db_session, user.id, today)
+        if final == base:
+            break
+        await asyncio.sleep(0.05)
+    assert final == base, f"expected exactly one refund (final {final} == base {base})"
+
+
+@pytest.mark.asyncio
 async def test_session_marked_failed_when_client_construction_raises(client, monkeypatch):
     import asyncio
 
