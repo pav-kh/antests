@@ -59,3 +59,12 @@ async def test_levels_are_separate(db_session):
 async def test_load_empty_returns_empty_dict(db_session):
     u = await _user(db_session)
     assert await load_competency(db_session, u.id, "base") == {}
+
+
+@pytest.mark.asyncio
+async def test_accuracy_repeating_decimal(db_session):
+    import pytest as _pytest
+    u = await _user(db_session)
+    await update_competency(db_session, u.id, "base", {"data": (3, 2)})
+    prof = await load_competency(db_session, u.id, "base")
+    assert prof["data"] == _pytest.approx(2 / 3, abs=1e-6)
