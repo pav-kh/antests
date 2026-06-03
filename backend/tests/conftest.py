@@ -3,6 +3,7 @@ import os
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # Ensure required env exists before app modules import settings.
 os.environ.setdefault("SESSION_SECRET", "test-secret")
@@ -19,7 +20,7 @@ os.environ["DATABASE_URL"] = TEST_DB_URL
 from app.db.base import Base  # noqa: E402  (import after env is set)
 from app.db import models  # noqa: E402,F401  (registers tables on Base.metadata)
 
-_engine = create_async_engine(TEST_DB_URL, future=True)
+_engine = create_async_engine(TEST_DB_URL, future=True, poolclass=NullPool)
 _Session = async_sessionmaker(_engine, expire_on_commit=False)
 
 
