@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatRemaining, remainingSeconds } from "@/lib/timer";
 
 export function Timer({
@@ -15,11 +15,20 @@ export function Timer({
     return () => clearInterval(t);
   }, []);
 
-  if (startedAt === null) {
+  const left =
+    startedAt === null ? null : remainingSeconds(startedAt, limitSec, now);
+
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (left !== null && left <= 0 && !firedRef.current) {
+      firedRef.current = true;
+      onExpire();
+    }
+  }, [left, onExpire]);
+
+  if (startedAt === null || left === null) {
     return <div className="label">Таймер запустится после подготовки теста</div>;
   }
-  const left = remainingSeconds(startedAt, limitSec, now);
-  if (left <= 0) onExpire();
   return (
     <div style={{
       background: "#fff", border: "1px solid #e0e6ee", borderRadius: 8,

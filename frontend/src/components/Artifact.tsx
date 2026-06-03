@@ -1,9 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ArtifactKind } from "@/lib/types";
 
 export function Artifact({ kind, content }: { kind: ArtifactKind; content: string | null }) {
-  const ref = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
 
   useEffect(() => {
@@ -25,14 +24,10 @@ export function Artifact({ kind, content }: { kind: ArtifactKind; content: strin
   if (kind === "none" || !content) return null;
 
   if (kind === "mermaid") {
-    return (
-      <div
-        data-testid="mermaid"
-        ref={ref}
-        style={{ background: "#fff", borderRadius: 8, padding: 12, overflow: "auto" }}
-        dangerouslySetInnerHTML={{ __html: svg || content }}
-      />
-    );
+    const boxStyle = { background: "#fff", borderRadius: 8, padding: 12, overflow: "auto" } as const;
+    return svg
+      ? <div data-testid="mermaid" style={boxStyle} dangerouslySetInnerHTML={{ __html: svg }} />
+      : <div data-testid="mermaid" style={boxStyle}>Отрисовка диаграммы…</div>;
   }
 
   return (
