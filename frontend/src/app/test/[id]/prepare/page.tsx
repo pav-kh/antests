@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, isUnauthorized } from "@/lib/api";
 import type { SessionStatusResponse } from "@/lib/types";
 
 export default function PreparePage() {
@@ -19,13 +19,14 @@ export default function PreparePage() {
         if (s.status !== "ready" && s.status !== "failed") {
           setTimeout(poll, 700);
         }
-      } catch {
+      } catch (err) {
+        if (isUnauthorized(err)) { router.push("/login"); return; }
         if (!stop) setTimeout(poll, 1500);
       }
     }
     poll();
     return () => { stop = true; };
-  }, [id]);
+  }, [id, router]);
 
   if (!status) return <Centered>Загрузка…</Centered>;
   if (status.status === "failed")

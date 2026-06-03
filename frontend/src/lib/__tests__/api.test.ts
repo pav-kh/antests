@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, isUnauthorized } from "@/lib/api";
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -36,5 +36,11 @@ describe("api", () => {
     vi.stubGlobal("fetch", mockFetch(201, { id: "s1", status: "generating", total_questions: 80 }));
     const s = await api.createSession("base", "exam");
     expect(s.id).toBe("s1");
+  });
+
+  it("isUnauthorized detects 401", () => {
+    expect(isUnauthorized(new ApiError(401, "x"))).toBe(true);
+    expect(isUnauthorized(new ApiError(500, "x"))).toBe(false);
+    expect(isUnauthorized(new Error("x"))).toBe(false);
   });
 });

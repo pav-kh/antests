@@ -65,6 +65,11 @@ export const api = {
   overview: () => request<Overview>("/me/overview"),
 };
 
+/** Returns true if the error is a 401 (caller should redirect to /login). */
+export function isUnauthorized(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
 export interface OverviewSession {
   id: string; level: Level; mode: Mode; status: string;
   score_percent: number | null; passed: boolean | null; created_at: string;

@@ -1,17 +1,28 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { useParams, useRouter } from "next/navigation";
+import { api, isUnauthorized } from "@/lib/api";
 import { Artifact } from "@/components/Artifact";
+import { weakTopics } from "@/lib/results";
 import type { Results } from "@/lib/types";
 
 export default function ResultsPage() {
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [results, setResults] = useState<Results | null>(null);
+  const [error, setError] = useState("");
 
-  useEffect(() => { api.results(id).then(setResults).catch(() => {}); }, [id]);
+  useEffect(() => {
+    api.results(id).then(setResults).catch((err) => {
+      if (isUnauthorized(err)) { router.push("/login"); return; }
+      setError("Не удалось загрузить результаты.");
+    });
+  }, [id, router]);
 
+  if (error) return <div style={{ padding: 40 }}>{error} <a href="/dashboard">На главную</a></div>;
   if (!results) return <div style={{ padding: 40 }}>Загрузка результатов…</div>;
+
+  const weak = weakTopics(results.topic_breakdown, 0.6);
 
   return (
     <div style={{ maxWidth: 820, margin: "32px auto", padding: "0 16px" }}>
@@ -25,6 +36,22 @@ export default function ResultsPage() {
           Отвечено {results.answered_count} / {results.total_questions}
         </div>
       </div>
+
+      {weak.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>Рекомендуем подтянуть</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {weak.map((t) => (
+              <span key={t.topic_id} style={{
+                background: "#fdeef0", color: "#b0556a", borderRadius: 20,
+                padding: "4px 12px", fontSize: 13,
+              }}>
+                {t.topic_id} · {Math.round(t.accuracy * 100)}%
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 16 }}>
         <h3>По темам</h3>

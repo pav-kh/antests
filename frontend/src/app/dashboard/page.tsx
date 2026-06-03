@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type Overview } from "@/lib/api";
+import { api, ApiError, isUnauthorized, type Overview } from "@/lib/api";
 import type { Level, Mode } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -13,7 +13,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api.overview().then(setOverview).catch((err) => {
-      if (err instanceof ApiError && err.status === 401) router.push("/login");
+      if (isUnauthorized(err)) router.push("/login");
     });
   }, [router]);
 

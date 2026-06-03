@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, isUnauthorized } from "@/lib/api";
 import { QuestionCard } from "@/components/QuestionCard";
 import { QuestionNav } from "@/components/QuestionNav";
 import { Timer } from "@/components/Timer";
@@ -30,11 +30,14 @@ export default function ExamPage() {
         if (s.status !== "ready" && s.status !== "failed" && s.status !== "finished") {
           setTimeout(poll, 800);
         }
-      } catch { if (!stop) setTimeout(poll, 1500); }
+      } catch (err) {
+        if (isUnauthorized(err)) { router.push("/login"); return; }
+        if (!stop) setTimeout(poll, 1500);
+      }
     }
     poll();
     return () => { stop = true; };
-  }, [id]);
+  }, [id, router]);
 
   const finish = useCallback(async () => {
     if (finishing) return;
