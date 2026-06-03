@@ -1,7 +1,18 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,4 +91,42 @@ class Question(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     validation_status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending"
+    )
+
+
+class Answer(Base):
+    __tablename__ = "answers"
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_id", name="uq_answer_session_question"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("test_sessions.id"), nullable=False, index=True
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("questions.id"), nullable=False, index=True
+    )
+    selected_keys: Mapped[list] = mapped_column(JSONB, nullable=False)
+    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    answered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TopicCompetency(Base):
+    __tablename__ = "topic_competency"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+    )
+    topic_id: Mapped[str] = mapped_column(String, primary_key=True)
+    level: Mapped[str] = mapped_column(String, primary_key=True)
+    total_answered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_correct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    accuracy: Mapped[float] = mapped_column(Numeric, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
