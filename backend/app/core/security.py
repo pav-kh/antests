@@ -1,6 +1,6 @@
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, VerificationError
-from itsdangerous import URLSafeSerializer, BadSignature
+from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
+from itsdangerous import URLSafeSerializer, BadData
 
 _ph = PasswordHasher()
 _SALT = "session"
@@ -13,7 +13,7 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return _ph.verify(hashed, plain)
-    except (VerifyMismatchError, VerificationError):
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
 
 
@@ -24,5 +24,5 @@ def sign_session(user_id: str, secret: str) -> str:
 def read_session(token: str, secret: str) -> str | None:
     try:
         return URLSafeSerializer(secret, salt=_SALT).loads(token)
-    except BadSignature:
+    except BadData:
         return None
