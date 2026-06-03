@@ -28,3 +28,31 @@ async def test_register_rejects_duplicate_login(db_session):
     await service.register_user(db_session, req, expected_code="TEST-CODE")
     with pytest.raises(service.LoginTaken):
         await service.register_user(db_session, req, expected_code="TEST-CODE")
+
+
+@pytest.mark.asyncio
+async def test_register_endpoint_success(client):
+    resp = await client.post(
+        "/auth/register",
+        json={"login": "erin", "password": "pw12345", "access_code": "TEST-CODE"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["login"] == "erin"
+    assert "session" in resp.cookies
+
+
+@pytest.mark.asyncio
+async def test_register_endpoint_wrong_code(client):
+    resp = await client.post(
+        "/auth/register",
+        json={"login": "frank", "password": "pw12345", "access_code": "NOPE"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_register_endpoint_duplicate(client):
+    body = {"login": "grace", "password": "pw12345", "access_code": "TEST-CODE"}
+    await client.post("/auth/register", json=body)
+    resp = await client.post("/auth/register", json=body)
+    assert resp.status_code == 409
