@@ -37,6 +37,7 @@ async def db_session():
 
 @pytest_asyncio.fixture()
 async def client(db_session):
+    from app.db.base import engine as app_engine
     from app.db.base import get_session
     from app.main import create_app
 
@@ -50,3 +51,8 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+    # Background generation tasks use the app's own pooled engine (SessionLocal),
+    # whose connections are bound to this test's event loop. Dispose the pool so a
+    # later test's loop can't reuse a connection still held by an in-flight task —
+    # which surfaces as asyncpg "another operation is in progress".
+    await app_engine.dispose()
