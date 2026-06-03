@@ -94,3 +94,30 @@ async def test_finish_requires_auth(client):
     await client.post("/auth/logout")
     fin = await client.post(f"/sessions/{sid}/finish")
     assert fin.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_answers_returns_selections_without_correctness(client):
+    await _register(client, "resume_u")
+    sid, qs = await _make_ready_session(client)
+    await client.post(f"/sessions/{sid}/answers",
+                      json={"question_id": qs[0]["id"], "selected_keys": ["a"]})
+    resp = await client.get(f"/sessions/{sid}/answers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["question_id"] == qs[0]["id"]
+    assert body[0]["selected_keys"] == ["a"]
+    # must NOT leak correctness or correct keys
+    assert "is_correct" not in body[0]
+    assert "correct_keys" not in body[0]
+
+
+@pytest.mark.asyncio
+async def test_list_answers_requires_ownership(client):
+    await _register(client, "owner_u")
+    sid, qs = await _make_ready_session(client)
+    await client.post("/auth/logout")
+    await _register(client, "other_u")
+    resp = await client.get(f"/sessions/{sid}/answers")
+    assert resp.status_code == 404

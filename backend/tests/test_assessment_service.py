@@ -57,6 +57,15 @@ async def test_submit_answer_persists_and_scores(db_session):
 
 
 @pytest.mark.asyncio
+async def test_submit_answer_marks_session_in_progress(db_session):
+    user, s, qs = await _seed_session(db_session)
+    assert s.status == "ready"
+    await service.submit_answer(db_session, s.id, qs[0].id, ["a"])
+    await db_session.refresh(s)
+    assert s.status == "in_progress"
+
+
+@pytest.mark.asyncio
 async def test_resubmit_overwrites_answer(db_session):
     user, s, qs = await _seed_session(db_session)
     await service.submit_answer(db_session, s.id, qs[0].id, ["b"])

@@ -40,6 +40,16 @@ async def submit_answer(
     return {"question_id": str(answer.question_id), "recorded": True}
 
 
+@router.get("/sessions/{session_id}/answers")
+async def list_answers(
+    session_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    await _owned_session(db, session_id, user)
+    return await service.list_answers(db, session_id)
+
+
 @router.post("/sessions/{session_id}/finish")
 async def finish(
     session_id: uuid.UUID,

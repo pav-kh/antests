@@ -37,6 +37,8 @@ async def submit_answer(
         raise ValueError("session not found")
     if session.status == "finished":
         raise SessionNotFinishable("cannot submit answers to a finished session")
+    if session.status == "ready":
+        session.status = "in_progress"
     correct = is_answer_correct(selected_keys, q.correct_keys)
     existing = (
         await db.execute(
@@ -57,6 +59,18 @@ async def submit_answer(
     await db.commit()
     await db.refresh(existing)
     return existing
+
+
+async def list_answers(db: AsyncSession, session_id) -> list[dict]:
+    rows = (
+        await db.execute(
+            select(Answer).where(Answer.session_id == session_id)
+        )
+    ).scalars().all()
+    return [
+        {"question_id": str(a.question_id), "selected_keys": a.selected_keys}
+        for a in rows
+    ]
 
 
 async def finish_session(
