@@ -98,6 +98,21 @@ async def increment_usage(
     await session.commit()
 
 
+async def decrement_usage(
+    session: AsyncSession, user_id: uuid.UUID, day: dt.date
+) -> None:
+    row = (
+        await session.execute(
+            select(DailyUsage).where(
+                DailyUsage.user_id == user_id, DailyUsage.date == day
+            )
+        )
+    ).scalar_one_or_none()
+    if row is not None and row.sessions_started > 0:
+        row.sessions_started -= 1
+        await session.commit()
+
+
 async def is_within_daily_limit(
     session: AsyncSession, user_id: uuid.UUID, day: dt.date, limit: int
 ) -> bool:

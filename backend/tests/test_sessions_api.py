@@ -77,6 +77,33 @@ async def test_daily_limit_blocks_after_threshold(client):
 
 
 @pytest.mark.asyncio
+async def test_failed_generation_refunds_daily_slot(client, monkeypatch):
+    from app.db.base import engine
+    from app.generation import router as gen_router
+
+    # See note in the failed-status test: dispose the app's pooled engine so the
+    # background task opens a SessionLocal() bound to this test's event loop.
+    await engine.dispose()
+
+    def _boom():
+        raise RuntimeError("bad key")
+
+    monkeypatch.setattr(gen_router, "build_openai_client", _boom)
+    await _register(client, "vera")
+    # start 5 sessions that all fail; each should refund, so we can keep going
+    for _ in range(5):  # more than the limit of 3 — only works if refunds happen
+        resp = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+        assert resp.status_code == 201
+        sid = resp.json()["id"]
+        for _ in range(50):
+            st = await client.get(f"/sessions/{sid}/status")
+            if st.json()["status"] == "failed":
+                break
+            await asyncio.sleep(0.05)
+        assert st.json()["status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_session_marked_failed_when_client_construction_raises(client, monkeypatch):
     import asyncio
 

@@ -39,12 +39,18 @@ def build_openai_client():
 
 async def _mark_session_failed(session_id) -> None:
     from app.db.models import TestSession
+    from app.auth import service as auth_service
     try:
         async with SessionLocal() as db:
             session = await db.get(TestSession, session_id)
             if session is not None and session.status not in ("ready", "finished"):
                 session.status = "failed"
                 await db.commit()
+                # Refund the daily-limit slot: a failed generation must not
+                # count against the user's daily allowance (product decision).
+                await auth_service.decrement_usage(
+                    db, session.user_id, session.created_at.date()
+                )
     except Exception:
         logger.exception("Failed to mark session %s as failed", session_id)
 
@@ -58,6 +64,14 @@ async def _run_generation(session_id, plan):
                 db, client, batch_size=settings.generation_batch_size
             )
             await gen.run(session_id, plan)
+            # If generation marked the session failed, refund the daily slot.
+            from app.db.models import TestSession
+            from app.auth import service as auth_service
+            session = await db.get(TestSession, session_id)
+            if session is not None and session.status == "failed":
+                await auth_service.decrement_usage(
+                    db, session.user_id, session.created_at.date()
+                )
     except Exception:
         logger.exception("Background generation failed for session %s", session_id)
         await _mark_session_failed(session_id)

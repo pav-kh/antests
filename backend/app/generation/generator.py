@@ -1,9 +1,12 @@
 import asyncio
 import datetime as dt
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Question, TestSession
+
+logger = logging.getLogger(__name__)
 
 
 class Generator:
@@ -59,6 +62,7 @@ class Generator:
             session.timer_started_at = dt.datetime.now(dt.timezone.utc)
             await self.db.commit()
         except Exception:
+            logger.exception("Generation failed for session %s", session_id)
             session.status = "failed"
             await self.db.commit()
 
