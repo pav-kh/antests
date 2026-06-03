@@ -17,6 +17,11 @@ export default function DashboardPage() {
     });
   }, [router]);
 
+  async function logout() {
+    try { await api.logout(); } catch { /* ignore */ }
+    router.push("/login");
+  }
+
   async function start() {
     setError("");
     try {
@@ -31,7 +36,10 @@ export default function DashboardPage() {
 
   return (
     <div style={{ maxWidth: 820, margin: "40px auto", padding: "0 16px" }}>
-      <h2>Тренажёр сертификации · Системный аналитик</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2>Тренажёр сертификации · Системный аналитик</h2>
+        <button className="btn btn-ghost" onClick={logout}>Выйти</button>
+      </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="label">Уровень</div>
         <div style={{ display: "flex", gap: 10, margin: "8px 0 16px" }}>
