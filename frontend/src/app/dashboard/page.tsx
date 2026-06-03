@@ -79,6 +79,8 @@ export default function DashboardPage() {
                   ? `${s.score_percent}% ${s.passed ? "✓ сдан" : "✗ не сдан"}`
                   : s.status}
                 {s.status === "finished" && <a href={`/test/${s.id}/results`} style={{ marginLeft: 10 }}>результаты</a>}
+                {(s.status === "ready" || s.status === "in_progress" || s.status === "generating") &&
+                  <a href={`/test/${s.id}`} style={{ marginLeft: 10 }}>продолжить</a>}
               </span>
             </div>
           ))}

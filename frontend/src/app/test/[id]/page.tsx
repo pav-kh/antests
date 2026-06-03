@@ -39,6 +39,18 @@ export default function ExamPage() {
     return () => { stop = true; };
   }, [id, router]);
 
+  // Restore previously-submitted answers (for resume).
+  useEffect(() => {
+    let stop = false;
+    api.listAnswers(id).then((prior) => {
+      if (stop) return;
+      const map: AnswerMap = {};
+      for (const a of prior) map[a.question_id] = a.selected_keys;
+      setAnswers((prev) => ({ ...map, ...prev })); // local edits win over restored
+    }).catch(() => { /* no prior answers / not critical */ });
+    return () => { stop = true; };
+  }, [id]);
+
   const finish = useCallback(async () => {
     if (finishing) return;
     setFinishing(true);

@@ -66,6 +66,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question_id, selected_keys }),
     }),
+  listAnswers: (id: string) =>
+    request<{ question_id: string; selected_keys: string[] }[]>(`/sessions/${id}/answers`),
   finish: (id: string) =>
     request<{ id: string; score_percent: number; passed: boolean; status: SessionStatus }>(
       `/sessions/${id}/finish`, { method: "POST" }
