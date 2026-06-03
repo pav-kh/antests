@@ -147,3 +147,28 @@ class OpenAIClient:
         )
         data = _parse_json_content(resp)
         return ValidationVerdict(**data)
+
+    async def recommend(self, level: str, weak_topics: list[tuple[str, float]]) -> str:
+        lines = [
+            f"- {get_topic(tid).title}: {round(acc * 100)}% верных"
+            for tid, acc in weak_topics
+        ]
+        prompt = (
+            "Дай студенту краткую персональную рекомендацию по подготовке к "
+            f"сертификации (уровень {level}). Слабые темы (точность ниже порога):\n"
+            + "\n".join(lines)
+            + "\n\nДля каждой слабой темы — что повторить и на что обратить внимание. "
+            "Пиши по-русски, дружелюбно и конкретно, без воды."
+        )
+        resp = await self._client.chat.completions.create(
+            model=self.gen_model,
+            messages=[
+                {"role": "system",
+                 "content": "Ты — наставник по подготовке системных аналитиков."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        content = resp.choices[0].message.content
+        if not content:
+            raise OpenAIResponseError("empty recommendation content")
+        return content
