@@ -36,3 +36,29 @@ def test_correct_keys_must_exist_in_options():
 def test_validation_verdict():
     v = ValidationVerdict(valid=True, reason="ok")
     assert v.valid is True
+
+
+def test_duplicate_option_keys_invalid():
+    import pytest
+    from pydantic import ValidationError
+    from app.generation.schemas import GeneratedQuestion
+    with pytest.raises(ValidationError):
+        GeneratedQuestion(
+            topic_id="data", type="single", stem="Q?",
+            artifact_kind="none", artifact_content=None,
+            options=[{"key": "a", "text": "x"}, {"key": "a", "text": "y"}],
+            correct_keys=["a"], explanation="b",
+        )
+
+
+def test_multi_with_one_correct_invalid():
+    import pytest
+    from pydantic import ValidationError
+    from app.generation.schemas import GeneratedQuestion
+    with pytest.raises(ValidationError):
+        GeneratedQuestion(
+            topic_id="data", type="multi", stem="Q?",
+            artifact_kind="none", artifact_content=None,
+            options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
+            correct_keys=["a"], explanation="b",
+        )
