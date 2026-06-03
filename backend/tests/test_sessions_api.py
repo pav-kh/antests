@@ -1,0 +1,76 @@
+import asyncio
+import pytest
+
+from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
+
+
+def _q(topic_id="data"):
+    return GeneratedQuestion(
+        topic_id=topic_id, type="single", stem="Q?",
+        artifact_kind="none", artifact_content=None,
+        options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
+        correct_keys=["a"], explanation="because",
+    )
+
+
+class FakeClient:
+    async def generate_batch(self, level, mode, plan_slice):
+        n = sum(c for _, c in plan_slice)
+        return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])
+
+    async def validate_question(self, q):
+        return ValidationVerdict(valid=True, reason="ok")
+
+
+@pytest.fixture(autouse=True)
+def _patch_client(monkeypatch):
+    from app.generation import router as gen_router
+    monkeypatch.setattr(gen_router, "build_openai_client", lambda: FakeClient())
+
+
+async def _register(client, login="kate"):
+    return await client.post(
+        "/auth/register",
+        json={"login": login, "password": "pw12345", "access_code": "TEST-CODE"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_adaptive_session_generates_and_becomes_ready(client):
+    await _register(client, "kate")
+    resp = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+    assert resp.status_code == 201
+    sid = resp.json()["id"]
+
+    for _ in range(50):
+        st = await client.get(f"/sessions/{sid}/status")
+        body = st.json()
+        if body["status"] == "ready":
+            break
+        await asyncio.sleep(0.05)
+    assert body["status"] == "ready"
+    assert body["generated_count"] == body["total_questions"]
+
+    qs = await client.get(f"/sessions/{sid}/questions")
+    items = qs.json()
+    assert len(items) == body["total_questions"]
+    assert "correct_keys" not in items[0]
+    assert "explanation" not in items[0]
+    assert {"id", "seq", "topic_id", "type", "stem", "options"} <= set(items[0].keys())
+
+
+@pytest.mark.asyncio
+async def test_create_session_requires_auth(client):
+    await client.post("/auth/logout")
+    resp = await client.post("/sessions", json={"level": "base", "mode": "exam"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_daily_limit_blocks_after_threshold(client):
+    await _register(client, "leo")
+    for _ in range(3):
+        r = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+        assert r.status_code == 201
+    blocked = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+    assert blocked.status_code == 429
