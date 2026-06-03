@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Send the session cookie only over HTTPS. Defaults False so local HTTP
     # dev keeps working; set COOKIE_SECURE=true in production behind TLS.
     cookie_secure: bool = False
+    # Browser origin of the frontend, for CORS. Must be an explicit origin (not
+    # a wildcard) because requests are credentialed. Set FRONTEND_ORIGIN in prod.
+    frontend_origin: str = "http://localhost:3000"
     openai_api_key: str = ""
     openai_gen_model: str = "gpt-4o"
     openai_validate_model: str = "gpt-4o-mini"
