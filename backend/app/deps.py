@@ -21,7 +21,11 @@ async def current_user(
     user_id = read_session(session, settings.session_secret)
     if user_id is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
-    user = await db.get(User, uuid.UUID(user_id))
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
+    user = await db.get(User, uid)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
