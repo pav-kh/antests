@@ -20,6 +20,7 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
         token,
         httponly=True,
         samesite="lax",
+        secure=settings.cookie_secure,
         max_age=60 * 60 * 24 * 14,
     )
 
@@ -53,7 +54,14 @@ async def login(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(response: Response):
-    response.delete_cookie(SESSION_COOKIE, path="/", samesite="lax", httponly=True)
+    settings = get_settings()
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        samesite="lax",
+        httponly=True,
+        secure=settings.cookie_secure,
+    )
 
 
 @router.get("/me", response_model=UserOut)

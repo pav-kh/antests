@@ -21,6 +21,33 @@ async def test_login_success_and_me(client):
 
 
 @pytest.mark.asyncio
+async def test_session_cookie_not_secure_by_default(client):
+    # Local HTTP dev: cookie must NOT carry the Secure attribute.
+    resp = await _register(client, "nadia")
+    set_cookie = resp.headers["set-cookie"]
+    assert "session=" in set_cookie
+    assert "secure" not in set_cookie.lower()
+
+
+@pytest.mark.asyncio
+async def test_session_cookie_secure_when_configured(client, monkeypatch):
+    # Production-over-HTTPS: COOKIE_SECURE=true makes the cookie Secure.
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    resp = await _register(client, "oscar")
+    set_cookie = resp.headers["set-cookie"]
+    assert "secure" in set_cookie.lower()
+
+
+@pytest.mark.asyncio
+async def test_logout_cookie_clear_respects_secure_flag(client, monkeypatch):
+    # The clearing cookie must match the Secure attribute or browsers ignore it.
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    resp = await client.post("/auth/logout")
+    set_cookie = resp.headers["set-cookie"]
+    assert "secure" in set_cookie.lower()
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password(client):
     await _register(client, "judy")
     await client.post("/auth/logout")
@@ -56,3 +83,31 @@ async def test_logout_clears_session_and_me_returns_401(client):
     await client.post("/auth/logout")
     me_after = await client.get("/auth/me")
     assert me_after.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_authenticate_missing_user_still_runs_password_verify(db_session, monkeypatch):
+    # Timing mitigation: when the login does not exist we must still perform an
+    # argon2 verification (against a dummy hash) so the missing-user branch does
+    # comparable work to the wrong-password branch and does not leak existence.
+    from app.auth import service
+    from app.auth.schemas import LoginRequest
+
+    calls = []
+    real_verify = service.verify_password
+
+    def spy_verify(plain, hashed):
+        calls.append(hashed)
+        return real_verify(plain, hashed)
+
+    monkeypatch.setattr(service, "verify_password", spy_verify)
+
+    with pytest.raises(service.InvalidCredentials):
+        await service.authenticate_user(
+            db_session, LoginRequest(login="ghost", password="whatever")
+        )
+
+    # verify_password was invoked exactly once even though the user is absent.
+    assert len(calls) == 1
+    # ...and it verified against a real argon2 hash, not the empty string.
+    assert calls[0].startswith("$argon2")
