@@ -33,6 +33,8 @@ async def submit_answer(
         answer = await service.submit_answer(
             db, session_id, uuid.UUID(req.question_id), req.selected_keys
         )
+    except service.SessionNotFinishable:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Session is not in a finishable state")
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid question")
     return {"question_id": str(answer.question_id), "recorded": True}
@@ -46,10 +48,13 @@ async def finish(
 ):
     await _owned_session(db, session_id, user)
     settings = get_settings()
-    session = await service.finish_session(
-        db, session_id, build_openai_client(),
-        weak_threshold=settings.weak_topic_threshold,
-    )
+    try:
+        session = await service.finish_session(
+            db, session_id, build_openai_client(),
+            weak_threshold=settings.weak_topic_threshold,
+        )
+    except service.SessionNotFinishable:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Session is not in a finishable state")
     return {"id": str(session.id), "score_percent": float(session.score_percent),
             "passed": session.passed, "status": session.status}
 

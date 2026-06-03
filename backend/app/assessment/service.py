@@ -8,6 +8,11 @@ from app.assessment.recommendation import build_recommendation
 from app.assessment.scoring import is_answer_correct, score
 from app.db.models import Answer, Question, TestSession
 
+
+class SessionNotFinishable(Exception):
+    """Raised when finishing or answering a session whose status doesn't allow it."""
+
+
 LEVEL_THRESHOLDS = {"base": 70.0, "specialist": 75.0}
 
 
@@ -27,6 +32,11 @@ async def submit_answer(
     q = await _get_question(db, session_id, question_id)
     if q is None:
         raise ValueError("question not in session")
+    session = await db.get(TestSession, session_id)
+    if session is None:
+        raise ValueError("session not found")
+    if session.status == "finished":
+        raise SessionNotFinishable("cannot submit answers to a finished session")
     correct = is_answer_correct(selected_keys, q.correct_keys)
     existing = (
         await db.execute(
@@ -55,6 +65,14 @@ async def finish_session(
     session = await db.get(TestSession, session_id)
     if session is None:
         raise ValueError("session not found")
+
+    if session.status == "finished":
+        # Idempotent: already finished, return as-is without re-tallying
+        # (re-tallying would double-count the competency profile).
+        return session
+    if session.status not in ("ready", "in_progress"):
+        # Cannot finish a session that is still generating or has failed.
+        raise SessionNotFinishable(f"session status '{session.status}' is not finishable")
 
     questions = (
         await db.execute(
@@ -87,9 +105,13 @@ async def finish_session(
     )
 
     topic_accuracy = await load_competency(db, session.user_id, session.level)
-    recommendation = await build_recommendation(
-        openai_client, session.level, topic_accuracy, weak_threshold
-    )
+    try:
+        recommendation = await build_recommendation(
+            openai_client, session.level, topic_accuracy, weak_threshold
+        )
+    except Exception:
+        # A recommendation failure must not block finishing the test.
+        recommendation = ""
 
     session.score_percent = result.percent
     session.passed = result.passed
