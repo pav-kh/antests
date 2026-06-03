@@ -1,9 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ArtifactKind } from "@/lib/types";
 
 export function Artifact({ kind, content }: { kind: ArtifactKind; content: string | null }) {
   const [svg, setSvg] = useState<string>("");
+  // A stable, guaranteed-unique id for the mermaid render target. useId avoids
+  // the collisions a content-hash could cause (same content -> same id, or hash
+  // clashes). Mermaid requires the id to be a valid CSS selector, so strip the
+  // colons React's useId emits.
+  const reactId = useId();
+  const mermaidId = `m${reactId.replace(/:/g, "")}`;
 
   useEffect(() => {
     if (kind !== "mermaid" || !content) return;
@@ -12,14 +18,14 @@ export function Artifact({ kind, content }: { kind: ArtifactKind; content: strin
       const mermaid = (await import("mermaid")).default;
       mermaid.initialize({ startOnLoad: false, theme: "neutral" });
       try {
-        const { svg } = await mermaid.render(`m${Math.abs(hash(content))}`, content);
+        const { svg } = await mermaid.render(mermaidId, content);
         if (!cancelled) setSvg(svg);
       } catch {
         if (!cancelled) setSvg("");
       }
     })();
     return () => { cancelled = true; };
-  }, [kind, content]);
+  }, [kind, content, mermaidId]);
 
   if (kind === "none" || !content) return null;
 
@@ -40,10 +46,4 @@ export function Artifact({ kind, content }: { kind: ArtifactKind; content: strin
       {content}
     </pre>
   );
-}
-
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
-  return h;
 }

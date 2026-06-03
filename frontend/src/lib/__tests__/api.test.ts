@@ -43,4 +43,20 @@ describe("api", () => {
     expect(isUnauthorized(new ApiError(500, "x"))).toBe(false);
     expect(isUnauthorized(new Error("x"))).toBe(false);
   });
+
+  it("sets Content-Type only when there is a body", async () => {
+    // POST with a body -> Content-Type present
+    const post = mockFetch(200, { id: "u1", login: "alice" });
+    vi.stubGlobal("fetch", post);
+    await api.login("alice", "pw");
+    const postHeaders = post.mock.calls[0][1].headers as Record<string, string>;
+    expect(postHeaders["Content-Type"]).toBe("application/json");
+
+    // bodyless GET -> no Content-Type
+    const get = mockFetch(200, { id: "u1", login: "alice" });
+    vi.stubGlobal("fetch", get);
+    await api.me();
+    const getHeaders = get.mock.calls[0][1].headers as Record<string, string>;
+    expect(getHeaders["Content-Type"]).toBeUndefined();
+  });
 });

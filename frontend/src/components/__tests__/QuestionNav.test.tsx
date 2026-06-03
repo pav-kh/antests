@@ -30,4 +30,20 @@ describe("QuestionNav", () => {
     fireEvent.click(screen.getByText("2"));
     expect(onJump).toHaveBeenCalledWith(2);
   });
+
+  it("renders cells as buttons; locked ones are disabled and not focusable", () => {
+    render(
+      <QuestionNav total={4} generatedCount={2} currentSeq={1}
+        answeredSeqs={new Set()} onJump={() => {}} />
+    );
+    // ready cell -> enabled button
+    const ready = screen.getByText("2").closest("button")!;
+    expect(ready).not.toBeDisabled();
+    // locked cell -> disabled button (keyboard users can't activate it either)
+    const locked = screen.getByText("4").closest("button")!;
+    expect(locked).toBeDisabled();
+    // current cell exposes aria-current
+    const current = screen.getByText("1").closest("button")!;
+    expect(current).toHaveAttribute("aria-current", "true");
+  });
 });

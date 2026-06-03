@@ -34,4 +34,12 @@ describe("timer", () => {
     expect(isExpired(start, 10800, during)).toBe(false);
     expect(isExpired(null, 10800, past)).toBe(false);
   });
+
+  it("falls back to the full limit (not expired) for a malformed start string", () => {
+    // A malformed timestamp must NOT instantly expire the exam; degrade to the
+    // full time limit instead of "expired".
+    const now = new Date("2026-06-03T10:30:00Z").getTime();
+    expect(remainingSeconds("not-a-date", 10800, now)).toBe(10800);
+    expect(isExpired("not-a-date", 10800, now)).toBe(false);
+  });
 });

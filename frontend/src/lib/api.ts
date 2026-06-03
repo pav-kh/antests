@@ -1,8 +1,12 @@
 import type {
-  Level, Mode, Question, Results, SessionStatusResponse, User,
+  Level, Mode, Question, Results, SessionStatus, SessionStatusResponse, User,
 } from "@/lib/types";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+// Default to same-origin ("") when unset so a production build behind a reverse
+// proxy uses relative URLs instead of a hardcoded localhost (which would fail
+// for users and be mixed-content-blocked under HTTPS). Local dev sets
+// NEXT_PUBLIC_API_BASE=http://localhost:8000 in .env.local.
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 export class ApiError extends Error {
   status: number;
@@ -13,10 +17,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only declare a JSON content type when we actually send a body — bodyless
+  // GETs/POSTs shouldn't advertise a request body.
+  const baseHeaders: Record<string, string> = init?.body
+    ? { "Content-Type": "application/json" }
+    : {};
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { ...baseHeaders, ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -44,7 +53,7 @@ export const api = {
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   me: () => request<User>("/auth/me"),
   createSession: (level: Level, mode: Mode) =>
-    request<{ id: string; status: string; total_questions: number }>("/sessions", {
+    request<{ id: string; status: SessionStatus; total_questions: number }>("/sessions", {
       method: "POST",
       body: JSON.stringify({ level, mode }),
     }),
@@ -58,7 +67,7 @@ export const api = {
       body: JSON.stringify({ question_id, selected_keys }),
     }),
   finish: (id: string) =>
-    request<{ id: string; score_percent: number; passed: boolean; status: string }>(
+    request<{ id: string; score_percent: number; passed: boolean; status: SessionStatus }>(
       `/sessions/${id}/finish`, { method: "POST" }
     ),
   results: (id: string) => request<Results>(`/sessions/${id}/results`),
@@ -71,7 +80,7 @@ export function isUnauthorized(err: unknown): boolean {
 }
 
 export interface OverviewSession {
-  id: string; level: Level; mode: Mode; status: string;
+  id: string; level: Level; mode: Mode; status: SessionStatus;
   score_percent: number | null; passed: boolean | null; created_at: string;
 }
 export interface OverviewTopic { topic_id: string; level: Level; accuracy: number; }

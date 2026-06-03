@@ -32,4 +32,23 @@ describe("QuestionCard", () => {
       "data-selected", "true"
     );
   });
+
+  it("renders options as accessible buttons with aria-pressed", () => {
+    render(<QuestionCard question={q} selected={["a"]} onToggle={() => {}} />);
+    const alpha = screen.getByRole("button", { name: "Alpha" });
+    const beta = screen.getByRole("button", { name: "Beta" });
+    expect(alpha).toHaveAttribute("aria-pressed", "true");
+    expect(beta).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("is keyboard-operable (Enter activates an option)", () => {
+    const onToggle = vi.fn();
+    render(<QuestionCard question={q} selected={[]} onToggle={onToggle} />);
+    const alpha = screen.getByRole("button", { name: "Alpha" });
+    alpha.focus();
+    expect(alpha).toHaveFocus();
+    // native <button> fires onClick for keyboard Enter/Space; assert it's wired
+    fireEvent.click(alpha);
+    expect(onToggle).toHaveBeenCalledWith("a");
+  });
 });

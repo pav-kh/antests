@@ -13,6 +13,9 @@ export function remainingSeconds(
   nowMs: number
 ): number {
   const startMs = new Date(startedAtIso).getTime();
+  // A malformed start string yields NaN; degrade to the full limit (treat as
+  // "just started") rather than instantly expiring the exam.
+  if (Number.isNaN(startMs)) return limitSec;
   const elapsed = Math.floor((nowMs - startMs) / 1000);
   return Math.max(0, limitSec - elapsed);
 }
