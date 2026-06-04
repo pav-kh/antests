@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, isUnauthorized, type Overview } from "@/lib/api";
+import { topicTitle } from "@/lib/topics";
 import type { Level, Mode } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -66,7 +67,7 @@ export default function DashboardPage() {
           <h3>Профиль по темам</h3>
           {overview.competency.map((c) => (
             <div key={`${c.level}-${c.topic_id}`} style={{ display: "flex", gap: 10, alignItems: "center", margin: "6px 0" }}>
-              <span style={{ width: 160 }}>{c.topic_id} ({c.level})</span>
+              <span style={{ width: 160 }}>{topicTitle(c.topic_id)} ({c.level})</span>
               <div style={{ flex: 1, height: 8, background: "#eef2f8", borderRadius: 4 }}>
                 <div style={{ width: `${Math.round(c.accuracy * 100)}%`, height: "100%", background: "#2f6fed", borderRadius: 4 }} />
               </div>

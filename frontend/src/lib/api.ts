@@ -59,6 +59,8 @@ export const api = {
     }),
   sessionStatus: (id: string) =>
     request<SessionStatusResponse>(`/sessions/${id}/status`),
+  startTimer: (id: string) =>
+    request<{ id: string; timer_started_at: string | null }>(`/sessions/${id}/start`, { method: "POST" }),
   sessionQuestions: (id: string) =>
     request<Question[]>(`/sessions/${id}/questions`),
   submitAnswer: (id: string, question_id: string, selected_keys: string[]) =>

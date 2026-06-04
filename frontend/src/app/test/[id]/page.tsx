@@ -39,6 +39,16 @@ export default function ExamPage() {
     return () => { stop = true; };
   }, [id, router]);
 
+  // Start the official timer the moment the user opens the exam screen
+  // (idempotent server-side: first entry wins, re-entry does not reset).
+  useEffect(() => {
+    api.startTimer(id)
+      .then((r) => {
+        setStatus((prev) => prev ? { ...prev, timer_started_at: r.timer_started_at } : prev);
+      })
+      .catch(() => { /* non-fatal; status poll will still carry timer_started_at */ });
+  }, [id]);
+
   // Restore previously-submitted answers (for resume).
   useEffect(() => {
     let stop = false;
@@ -74,6 +84,16 @@ export default function ExamPage() {
     const next = toggleSelection(answers[current.id] ?? [], key, current.type);
     setAnswers((prev) => ({ ...prev, [current.id]: next }));
     try { await api.submitAnswer(id, current.id, next); } catch { /* keep local */ }
+  }
+
+  if (finishing) {
+    return (
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+        <div style={{ width: 40, height: 40, border: "4px solid #e6ebf2", borderTopColor: "#2f6fed", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <div className="label">Проверяем ответы и готовим результаты…</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
   }
 
   return (
