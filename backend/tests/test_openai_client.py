@@ -107,6 +107,56 @@ async def test_validate_question_prompt_rejects_self_answering():
     assert "сам себя" in prompt or "выдаёт" in prompt
 
 
+@pytest.mark.asyncio
+async def test_validate_question_prompt_rejects_artifact_type_identification():
+    # The validator must reject artifact questions that only ask to IDENTIFY the
+    # artifact's type/format (answer obvious from the artifact) rather than to
+    # ANALYZE its content.
+    captured = {}
+
+    class _CapturingCompletions:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _FakeCompletion(json.dumps({"valid": True, "reason": "ok"}))
+
+    class _CapturingChat:
+        completions = _CapturingCompletions()
+
+    class _CapturingClient:
+        chat = _CapturingChat()
+
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_CapturingClient())
+    await client.validate_question(GeneratedQuestion(**_valid_question_payload()))
+    prompt = " ".join(m["content"] for m in captured["messages"]).lower()
+    assert "узнаван" in prompt or "анализ" in prompt
+
+
+@pytest.mark.asyncio
+async def test_want_artifact_prompt_demands_content_analysis():
+    # When asking for an artifact, the generation prompt must demand questions
+    # that analyze the artifact's CONTENT, and forbid "what type is this?".
+    captured = {}
+
+    class _CapturingCompletions:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _FakeCompletion(json.dumps({"questions": []}))
+
+    class _CapturingChat:
+        completions = _CapturingCompletions()
+
+    class _CapturingClient:
+        chat = _CapturingChat()
+
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_CapturingClient())
+    await client.generate_batch("base", "exam", [("data", 1)], want_artifact=True)
+    prompt = " ".join(m["content"] for m in captured["messages"]).lower()
+    assert "анализа содержимого" in prompt or "разобраться" in prompt
+    assert "что это за тип" in prompt or "узнаван" in prompt
+
+
 def test_stem_reveals_answer_detects_self_answering():
     from app.generation.openai_client import _stem_reveals_answer
     # The stem contains the full correct answer phrase verbatim -> revealed.
