@@ -8,10 +8,35 @@ from app.generation.generator import Generator
 from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
 
 
+import itertools
+
+_stem_counter = itertools.count()
+
+
 def _q(topic_id="data"):
+    # A real model returns a distinct stem each time; mirror that so the
+    # generator's per-topic dedup guard doesn't collapse the whole batch.
     return GeneratedQuestion(
-        topic_id=topic_id, type="single", stem="Q?",
+        topic_id=topic_id, type="single", stem=f"Q{next(_stem_counter)}?",
         artifact_kind="none", artifact_content=None,
+        options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
+        correct_keys=["a"], explanation="because",
+    )
+
+
+def _dup_q(stem, topic_id="data"):
+    return GeneratedQuestion(
+        topic_id=topic_id, type="single", stem=stem,
+        artifact_kind="none", artifact_content=None,
+        options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
+        correct_keys=["a"], explanation="because",
+    )
+
+
+def _artifact_q(stem, topic_id="data"):
+    return GeneratedQuestion(
+        topic_id=topic_id, type="single", stem=stem,
+        artifact_kind="sql", artifact_content="SELECT 1",
         options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
         correct_keys=["a"], explanation="because",
     )
@@ -22,7 +47,9 @@ class FakeClient:
         self.reject_first = reject_first
         self._validated = 0
 
-    async def generate_batch(self, level, mode, plan_slice):
+    async def generate_batch(
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+    ):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])
 
@@ -56,7 +83,9 @@ async def test_generator_fills_pool_and_marks_ready(db_session):
     await db_session.refresh(s)
     assert s.status == "ready"
     assert s.generated_count == 5
-    assert s.timer_started_at is not None
+    # The timer is NOT started by the generator anymore — it starts when the
+    # user opens the exam screen (POST /sessions/{id}/start).
+    assert s.timer_started_at is None
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     assert len(qs) == 5
@@ -72,7 +101,9 @@ async def test_generator_completes_when_model_returns_topic_title_not_key(db_ses
     from app.generation.topics import get_topic
 
     class TitleEchoClient(FakeClient):
-        async def generate_batch(self, level, mode, plan_slice):
+        async def generate_batch(
+            self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        ):
             n = sum(c for _, c in plan_slice)
             title = get_topic(plan_slice[0][0]).title  # model echoes the TITLE
             return GeneratedBatch(questions=[_q(title) for _ in range(n)])
@@ -111,3 +142,79 @@ async def test_generator_marks_failed_on_client_error(db_session):
     await gen.run(s.id, plan=[("data", 3)])
     await db_session.refresh(s)
     assert s.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_generator_dedupes_repeated_stems_per_topic(db_session):
+    # Root cause this guards: with small batches the model re-emits the same
+    # "obvious" questions for a topic. The generator must (a) thread already
+    # generated stems back as avoid_stems so the model diversifies, and
+    # (b) hard-skip exact repeats. This fake returns identical stems on the
+    # first (no-avoid) call and unique stems once avoid_stems is supplied.
+    class DupClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self._calls = 0
+
+        async def generate_batch(
+            self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        ):
+            self._calls += 1
+            n = sum(c for _, c in plan_slice)
+            if not avoid_stems:
+                # all identical -> only the first survives the dedup guard
+                return GeneratedBatch(questions=[_dup_q("DUP") for _ in range(n)])
+            return GeneratedBatch(
+                questions=[_dup_q(f"unique-{self._calls}-{i}") for i in range(n)]
+            )
+
+    s = await _make_session(db_session, total=4)
+    gen = Generator(db_session, DupClient(), batch_size=2)
+    await gen.run(s.id, plan=[("data", 4)])
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    assert s.generated_count == 4
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id))).scalars().all()
+    stems = [q.stem for q in qs]
+    assert len(stems) == 4
+    assert len(set(stems)) == 4  # no duplicates stored
+
+
+@pytest.mark.asyncio
+async def test_generator_meets_artifact_quota(db_session):
+    # At least ceil(0.15 * total) questions must carry an artifact. The fake
+    # returns SQL-artifact questions only when want_artifact is requested.
+    import math
+
+    class ArtifactClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self._calls = 0
+
+        async def generate_batch(
+            self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        ):
+            self._calls += 1
+            tid = plan_slice[0][0]
+            n = sum(c for _, c in plan_slice)
+            maker = _artifact_q if want_artifact else _dup_q
+            return GeneratedBatch(
+                questions=[
+                    maker(f"{tid}-{self._calls}-{i}", topic_id=tid) for i in range(n)
+                ]
+            )
+
+    total = 10
+    s = await _make_session(db_session, total=total)
+    # artifact-friendly topics so the quota actually requests artifacts
+    plan = [("data", 5), ("integration", 5)]
+    gen = Generator(db_session, ArtifactClient(), batch_size=3)
+    await gen.run(s.id, plan=plan)
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    assert s.generated_count == total
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id))).scalars().all()
+    with_artifact = [q for q in qs if q.artifact_kind != "none"]
+    assert len(with_artifact) >= math.ceil(0.15 * total)

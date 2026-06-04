@@ -129,6 +129,22 @@ async def session_status(
     }
 
 
+@router.post("/sessions/{session_id}/start")
+async def start_session_timer(
+    session_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    s = await service.get_status(db, session_id)
+    if s is None or s.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    s = await service.start_timer(db, session_id)
+    return {
+        "id": str(s.id),
+        "timer_started_at": s.timer_started_at.isoformat() if s.timer_started_at else None,
+    }
+
+
 @router.get("/sessions/{session_id}/questions")
 async def session_questions(
     session_id: uuid.UUID,

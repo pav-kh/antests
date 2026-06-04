@@ -94,7 +94,9 @@ class OpenAIClient:
         self.validate_model = validate_model
         self._client = _client or AsyncOpenAI(api_key=api_key)
 
-    async def generate_batch(self, level, mode, plan_slice):
+    async def generate_batch(
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+    ):
         topic_lines = []
         for tid, count in plan_slice:
             t = get_topic(tid)
@@ -105,6 +107,20 @@ class OpenAIClient:
         user_prompt = (
             f"Уровень: {level}. Сгенерируй вопросы:\n" + "\n".join(topic_lines)
         )
+        if avoid_stems:
+            avoid_block = "\n".join(f"- {st}" for st in avoid_stems[:40])
+            user_prompt += (
+                "\n\nНЕ ПОВТОРЯЙ и не перефразируй эти уже созданные вопросы — "
+                "сгенерируй ДРУГИЕ, по другим аспектам темы:\n" + avoid_block
+            )
+        if want_artifact:
+            user_prompt += (
+                "\n\nВ КАЖДОМ вопросе этого набора ОБЯЗАТЕЛЬНО добавь артефакт, "
+                "встроенный в вопрос: фрагмент кода, SQL, JSON, XML или диаграмму "
+                "в синтаксисе Mermaid (artifact_kind != 'none', artifact_content "
+                "заполнен). Выбирай тип артефакта, уместный теме: для данных — SQL, "
+                "для интеграций — JSON/XML, для моделирования — Mermaid-диаграмма."
+            )
         resp = await self._client.chat.completions.create(
             model=self.gen_model,
             messages=[

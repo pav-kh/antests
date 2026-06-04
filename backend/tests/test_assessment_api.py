@@ -1,13 +1,18 @@
 import asyncio
+import itertools
 
 import pytest
 
 from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
 
+_stem_counter = itertools.count()
+
 
 def _q(topic_id="data"):
+    # Distinct stem per call so the generator's per-topic dedup guard (which
+    # skips exact-duplicate stems) doesn't collapse the batch.
     return GeneratedQuestion(
-        topic_id=topic_id, type="single", stem="Q?",
+        topic_id=topic_id, type="single", stem=f"Q{next(_stem_counter)}?",
         artifact_kind="none", artifact_content=None,
         options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
         correct_keys=["a"], explanation="because",
@@ -15,7 +20,9 @@ def _q(topic_id="data"):
 
 
 class FakeClient:
-    async def generate_batch(self, level, mode, plan_slice):
+    async def generate_batch(
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+    ):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])
 

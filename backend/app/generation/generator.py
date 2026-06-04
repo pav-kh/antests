@@ -1,12 +1,19 @@
 import asyncio
-import datetime as dt
 import logging
+import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Question, TestSession
 
 logger = logging.getLogger(__name__)
+
+# Topics that naturally carry an embedded artifact (code/SQL/JSON/XML/diagram).
+# Used to steer the artifact quota toward questions where an artifact is
+# pedagogically appropriate instead of bolted on.
+ARTIFACT_TOPICS = {
+    "data", "integration", "modeling", "architecture", "fundamentals", "security",
+}
 
 
 class Generator:
@@ -24,6 +31,11 @@ class Generator:
             return
         try:
             seq = session.generated_count
+            # Aim a bit above the 10% floor so the quota comfortably clears it
+            # even after a few artifact questions get rejected by validation.
+            total_questions = sum(c for _, c in plan)
+            artifact_target = max(1, math.ceil(0.15 * total_questions))
+            artifact_count = 0
             # Process one topic at a time. Routing questions by the model's
             # returned topic_id is unreliable — the model echoes the topic TITLE
             # (or a paraphrase), not the canonical key — so we generate per topic
@@ -33,11 +45,24 @@ class Generator:
                 needed = count
                 attempts = 0
                 max_attempts = (count + 1) * (self.max_slot_retries + 1)
+                # Track stems generated for THIS topic so we can both ask the
+                # model to diversify (avoid_stems) and hard-skip exact repeats
+                # (seen_stems), preventing near-duplicate questions early in a
+                # test run.
+                topic_stems = []
+                seen_stems = set()
                 while needed > 0 and attempts < max_attempts:
                     attempts += 1
                     take = min(needed, self.batch_size)
+                    # Only request artifacts on artifact-friendly topics, and
+                    # only while we still owe the session its quota.
+                    want_artifact = (
+                        topic_id in ARTIFACT_TOPICS
+                        and artifact_count < artifact_target
+                    )
                     batch = await self._generate_with_retry(
-                        session.level, session.mode, [(topic_id, take)]
+                        session.level, session.mode, [(topic_id, take)],
+                        avoid_stems=topic_stems, want_artifact=want_artifact,
                     )
                     for q in batch.questions:
                         if needed <= 0:
@@ -45,6 +70,10 @@ class Generator:
                         verdict = await self.client.validate_question(q)
                         if not verdict.valid:
                             continue
+                        norm = q.stem.strip().lower()
+                        if norm in seen_stems:
+                            continue
+                        seen_stems.add(norm)
                         seq += 1
                         self.db.add(Question(
                             session_id=session.id, seq=seq, topic_id=topic_id,
@@ -55,6 +84,9 @@ class Generator:
                             validation_status="passed",
                         ))
                         needed -= 1
+                        topic_stems.append(q.stem)
+                        if q.artifact_kind != "none":
+                            artifact_count += 1
                         session.generated_count = seq
                         # Commit after EACH validated question so generated_count
                         # rises live — the frontend sees smooth progress and can
@@ -68,19 +100,26 @@ class Generator:
                     return
 
             session.status = "ready"
-            session.timer_started_at = dt.datetime.now(dt.timezone.utc)
+            # NB: the generator no longer starts the timer. The timer starts
+            # when the user first opens the exam screen (POST /sessions/{id}/start),
+            # so the prep time spent waiting for the pool isn't billed against them.
             await self.db.commit()
         except Exception:
             logger.exception("Generation failed for session %s", session_id)
             session.status = "failed"
             await self.db.commit()
 
-    async def _generate_with_retry(self, level, mode, slice_):
+    async def _generate_with_retry(
+        self, level, mode, slice_, avoid_stems=None, want_artifact=False
+    ):
         delay = 0.0
         last = None
         for attempt in range(self.max_batch_retries):
             try:
-                return await self.client.generate_batch(level, mode, slice_)
+                return await self.client.generate_batch(
+                    level, mode, slice_,
+                    avoid_stems=avoid_stems, want_artifact=want_artifact,
+                )
             except Exception as e:  # noqa: BLE001
                 last = e
                 if delay:

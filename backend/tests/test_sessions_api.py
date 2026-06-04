@@ -1,12 +1,18 @@
 import asyncio
+import itertools
+
 import pytest
 
 from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
 
+_stem_counter = itertools.count()
+
 
 def _q(topic_id="data"):
+    # Distinct stem per call so the generator's per-topic dedup guard (which
+    # skips exact-duplicate stems) doesn't collapse the batch.
     return GeneratedQuestion(
-        topic_id=topic_id, type="single", stem="Q?",
+        topic_id=topic_id, type="single", stem=f"Q{next(_stem_counter)}?",
         artifact_kind="none", artifact_content=None,
         options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
         correct_keys=["a"], explanation="because",
@@ -14,7 +20,9 @@ def _q(topic_id="data"):
 
 
 class FakeClient:
-    async def generate_batch(self, level, mode, plan_slice):
+    async def generate_batch(
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+    ):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])
 
@@ -33,6 +41,18 @@ async def _register(client, login="kate"):
         "/auth/register",
         json={"login": login, "password": "pw12345", "access_code": "TEST-CODE"},
     )
+
+
+async def _make_ready_session(client):
+    resp = await client.post("/sessions", json={"level": "base", "mode": "adaptive"})
+    sid = resp.json()["id"]
+    for _ in range(50):
+        st = await client.get(f"/sessions/{sid}/status")
+        if st.json()["status"] == "ready":
+            break
+        await asyncio.sleep(0.05)
+    qs = (await client.get(f"/sessions/{sid}/questions")).json()
+    return sid, qs
 
 
 @pytest.mark.asyncio
@@ -57,6 +77,35 @@ async def test_create_adaptive_session_generates_and_becomes_ready(client):
     assert "correct_keys" not in items[0]
     assert "explanation" not in items[0]
     assert {"id", "seq", "topic_id", "type", "stem", "options"} <= set(items[0].keys())
+
+
+@pytest.mark.asyncio
+async def test_start_timer_is_idempotent(client):
+    await _register(client, "timer_u")
+    sid, _ = await _make_ready_session(client)
+
+    # A freshly-ready session has no timer until the user enters the exam.
+    pre = await client.get(f"/sessions/{sid}/status")
+    assert pre.json()["timer_started_at"] is None
+
+    r1 = await client.post(f"/sessions/{sid}/start")
+    assert r1.status_code == 200
+    t1 = r1.json()["timer_started_at"]
+    assert t1 is not None
+
+    r2 = await client.post(f"/sessions/{sid}/start")
+    assert r2.status_code == 200
+    assert r2.json()["timer_started_at"] == t1  # unchanged on re-entry
+
+
+@pytest.mark.asyncio
+async def test_start_timer_requires_ownership(client):
+    await _register(client, "owner_u")
+    sid, _ = await _make_ready_session(client)
+    await client.post("/auth/logout")
+    await _register(client, "intruder_u")
+    r = await client.post(f"/sessions/{sid}/start")
+    assert r.status_code == 404
 
 
 @pytest.mark.asyncio

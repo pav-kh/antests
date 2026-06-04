@@ -54,6 +54,19 @@ async def get_status(db: AsyncSession, session_id) -> TestSession | None:
     return await db.get(TestSession, session_id)
 
 
+async def start_timer(db: AsyncSession, session_id) -> TestSession | None:
+    # Idempotent: the first entry into the exam screen wins. Re-entering (a
+    # reload, a second tab, a poll) must NOT reset the clock.
+    session = await db.get(TestSession, session_id)
+    if session is None:
+        return None
+    if session.timer_started_at is None:
+        session.timer_started_at = dt.datetime.now(dt.timezone.utc)
+        await db.commit()
+        await db.refresh(session)
+    return session
+
+
 async def list_ready_questions(db: AsyncSession, session_id) -> list[Question]:
     rows = (
         await db.execute(
