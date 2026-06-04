@@ -58,9 +58,17 @@ async def finish(
 ):
     await _owned_session(db, session_id, user)
     settings = get_settings()
+    # Building the OpenAI client can fail (e.g. missing OPENAI_API_KEY raises at
+    # construction). That must not block finishing the test — scoring and the
+    # competency update don't need the LLM. Pass None so finish_session skips the
+    # recommendation (its build_recommendation call is already failure-tolerant).
+    try:
+        openai_client = build_openai_client()
+    except Exception:
+        openai_client = None
     try:
         session = await service.finish_session(
-            db, session_id, build_openai_client(),
+            db, session_id, openai_client,
             weak_threshold=settings.weak_topic_threshold,
         )
     except service.SessionNotFinishable:

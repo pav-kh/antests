@@ -78,6 +78,40 @@ async def test_full_flow_submit_finish_results(client):
 
 
 @pytest.mark.asyncio
+async def test_finish_succeeds_when_openai_client_cannot_be_built(client, monkeypatch):
+    # Regression: if OPENAI_API_KEY is missing, build_openai_client() raises at
+    # construction (before the recommendation try/except in the service), which
+    # previously 500'd /finish and left the session stuck in_progress. Finishing
+    # (scoring + competency) must succeed regardless; only the recommendation is
+    # skipped.
+    from app.assessment import router as asm_router
+
+    def _boom():
+        raise RuntimeError("Missing credentials")
+
+    await _register(client, "nokey")
+    sid, qs = await _make_ready_session(client)
+    # Answer everything WRONG so there is at least one weak topic — that's the
+    # path that would try to call the (unbuildable) LLM for a recommendation.
+    for q in qs:
+        await client.post(
+            f"/sessions/{sid}/answers",
+            json={"question_id": q["id"], "selected_keys": ["b"]},
+        )
+    monkeypatch.setattr(asm_router, "build_openai_client", _boom)
+    fin = await client.post(f"/sessions/{sid}/finish")
+    assert fin.status_code == 200  # NOT 500 — finishing must not depend on the LLM
+    body = fin.json()
+    assert body["status"] == "finished"
+    assert body["score_percent"] == 0.0
+
+    res = await client.get(f"/sessions/{sid}/results")
+    assert res.status_code == 200
+    # finished cleanly; recommendation is empty because the client couldn't build
+    assert res.json()["recommendation"] == ""
+
+
+@pytest.mark.asyncio
 async def test_results_requires_ownership(client):
     await _register(client, "rita")
     sid, qs = await _make_ready_session(client)

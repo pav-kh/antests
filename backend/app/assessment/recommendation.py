@@ -18,4 +18,8 @@ async def build_recommendation(
     )
     if not weak:
         return PASS_PRAISE
+    if openai_client is None:
+        # No LLM available (e.g. OPENAI_API_KEY missing). Finishing must still
+        # succeed; we just can't produce targeted advice this time.
+        return ""
     return await openai_client.recommend(level, weak)
