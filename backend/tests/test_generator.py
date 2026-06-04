@@ -65,6 +65,31 @@ async def test_generator_fills_pool_and_marks_ready(db_session):
 
 
 @pytest.mark.asyncio
+async def test_generator_completes_when_model_returns_topic_title_not_key(db_session):
+    # Regression: the real LLM returns the topic TITLE (e.g. "Хранение и обработка
+    # данных") as topic_id, not the requested key ("data"). The generator must NOT
+    # filter those out and loop forever — it must assign the correct key and finish.
+    from app.generation.topics import get_topic
+
+    class TitleEchoClient(FakeClient):
+        async def generate_batch(self, level, mode, plan_slice):
+            n = sum(c for _, c in plan_slice)
+            title = get_topic(plan_slice[0][0]).title  # model echoes the TITLE
+            return GeneratedBatch(questions=[_q(title) for _ in range(n)])
+
+    s = await _make_session(db_session, total=3)
+    gen = Generator(db_session, TitleEchoClient(), batch_size=10)
+    await gen.run(s.id, plan=[("data", 3)])
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    assert s.generated_count == 3
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id))).scalars().all()
+    # stored topic_id must be the canonical KEY, not the title the model returned
+    assert all(q.topic_id == "data" for q in qs)
+
+
+@pytest.mark.asyncio
 async def test_generator_retries_rejected_questions(db_session):
     s = await _make_session(db_session, total=3)
     gen = Generator(db_session, FakeClient(reject_first=2), batch_size=10)

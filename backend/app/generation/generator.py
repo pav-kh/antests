@@ -24,39 +24,48 @@ class Generator:
             return
         try:
             seq = session.generated_count
-            remaining = {tid: count for tid, count in plan}
-            slot_attempts = 0
-            while sum(remaining.values()) > 0:
-                slice_ = self._next_slice(remaining)
-                batch = await self._generate_with_retry(
-                    session.level, session.mode, slice_
-                )
-                for q in batch.questions:
-                    if remaining.get(q.topic_id, 0) <= 0:
-                        continue
-                    verdict = await self.client.validate_question(q)
-                    if not verdict.valid:
-                        continue
-                    seq += 1
-                    self.db.add(Question(
-                        session_id=session.id, seq=seq, topic_id=q.topic_id,
-                        type=q.type, stem=q.stem, artifact_kind=q.artifact_kind,
-                        artifact_content=q.artifact_content,
-                        options=[o.model_dump() for o in q.options],
-                        correct_keys=q.correct_keys, explanation=q.explanation,
-                        validation_status="passed",
-                    ))
-                    remaining[q.topic_id] -= 1
-                    session.generated_count = seq
-                await self.db.commit()
-                slot_attempts += 1
-                if slot_attempts > (session.total_questions + 1) * (self.max_slot_retries + 1):
-                    break
-
-            if sum(remaining.values()) > 0:
-                session.status = "failed"
-                await self.db.commit()
-                return
+            # Process one topic at a time. Routing questions by the model's
+            # returned topic_id is unreliable — the model echoes the topic TITLE
+            # (or a paraphrase), not the canonical key — so we generate per topic
+            # and stamp the known key ourselves. This prevents an infinite loop
+            # where every question is discarded for a "mismatched" topic_id.
+            for topic_id, count in plan:
+                needed = count
+                attempts = 0
+                max_attempts = (count + 1) * (self.max_slot_retries + 1)
+                while needed > 0 and attempts < max_attempts:
+                    attempts += 1
+                    take = min(needed, self.batch_size)
+                    batch = await self._generate_with_retry(
+                        session.level, session.mode, [(topic_id, take)]
+                    )
+                    for q in batch.questions:
+                        if needed <= 0:
+                            break
+                        verdict = await self.client.validate_question(q)
+                        if not verdict.valid:
+                            continue
+                        seq += 1
+                        self.db.add(Question(
+                            session_id=session.id, seq=seq, topic_id=topic_id,
+                            type=q.type, stem=q.stem, artifact_kind=q.artifact_kind,
+                            artifact_content=q.artifact_content,
+                            options=[o.model_dump() for o in q.options],
+                            correct_keys=q.correct_keys, explanation=q.explanation,
+                            validation_status="passed",
+                        ))
+                        needed -= 1
+                        session.generated_count = seq
+                        # Commit after EACH validated question so generated_count
+                        # rises live — the frontend sees smooth progress and can
+                        # start answering ready questions instead of a frozen
+                        # counter.
+                        await self.db.commit()
+                if needed > 0:
+                    # Could not fill this topic within the attempt budget.
+                    session.status = "failed"
+                    await self.db.commit()
+                    return
 
             session.status = "ready"
             session.timer_started_at = dt.datetime.now(dt.timezone.utc)
@@ -65,21 +74,6 @@ class Generator:
             logger.exception("Generation failed for session %s", session_id)
             session.status = "failed"
             await self.db.commit()
-
-    def _next_slice(self, remaining):
-        slice_ = []
-        budget = self.batch_size
-        for tid, need in remaining.items():
-            if need <= 0:
-                continue
-            take = min(need, budget)
-            if take <= 0:
-                break
-            slice_.append((tid, take))
-            budget -= take
-            if budget <= 0:
-                break
-        return slice_
 
     async def _generate_with_retry(self, level, mode, slice_):
         delay = 0.0
