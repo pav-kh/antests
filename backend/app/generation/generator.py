@@ -31,10 +31,13 @@ class Generator:
             return
         try:
             seq = session.generated_count
-            # Aim a bit above the 10% floor so the quota comfortably clears it
-            # even after a few artifact questions get rejected by validation.
+            # Artifact quota: aim for ~15% (target) but never exceed 20% (cap).
+            # The target drives whether we ASK the model for an artifact; the cap
+            # is a hard ceiling enforced when STORING — any extra artifact the
+            # model adds on its own past the cap is stripped to text-only.
             total_questions = sum(c for _, c in plan)
             artifact_target = max(1, math.ceil(0.15 * total_questions))
+            artifact_cap = math.floor(0.20 * total_questions)
             artifact_count = 0
             # Process one topic at a time. Routing questions by the model's
             # returned topic_id is unreliable — the model echoes the topic TITLE
@@ -75,17 +78,24 @@ class Generator:
                             continue
                         seen_stems.add(norm)
                         seq += 1
+                        # Enforce the 20% cap: if this question carries an
+                        # artifact but we're already at the ceiling, store it as
+                        # text-only so artifacts never exceed the cap.
+                        kind = q.artifact_kind
+                        content = q.artifact_content
+                        if kind != "none" and artifact_count >= artifact_cap:
+                            kind, content = "none", None
                         self.db.add(Question(
                             session_id=session.id, seq=seq, topic_id=topic_id,
-                            type=q.type, stem=q.stem, artifact_kind=q.artifact_kind,
-                            artifact_content=q.artifact_content,
+                            type=q.type, stem=q.stem, artifact_kind=kind,
+                            artifact_content=content,
                             options=[o.model_dump() for o in q.options],
                             correct_keys=q.correct_keys, explanation=q.explanation,
                             validation_status="passed",
                         ))
                         needed -= 1
                         topic_stems.append(q.stem)
-                        if q.artifact_kind != "none":
+                        if kind != "none":
                             artifact_count += 1
                         session.generated_count = seq
                         # Commit after EACH validated question so generated_count

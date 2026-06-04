@@ -1,9 +1,27 @@
 import json
+import re
 
 from openai import AsyncOpenAI
 
 from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
 from app.generation.topics import get_topic
+
+# Matches a fenced code block (```lang ... ```), e.g. ```mermaid ... ``` — used
+# to scrub artifact text the model sometimes duplicates into the question stem.
+_FENCE_RE = re.compile(r"```[\w-]*.*?```", re.DOTALL)
+
+
+def _strip_artifact_from_stem(stem: str) -> str:
+    """Remove any fenced artifact block the model leaked into the stem.
+
+    The artifact belongs only in artifact_content; if it also appears in the
+    stem (raw ``` block), the user would see it twice — once as plain text and
+    once rendered. Strip fenced blocks and a possible dangling fence/leftover.
+    """
+    cleaned = _FENCE_RE.sub("", stem)
+    # Drop a leftover opening fence with no closing one (truncated leak).
+    cleaned = re.sub(r"```[\w-]*.*$", "", cleaned, flags=re.DOTALL)
+    return cleaned.strip()
 
 
 class OpenAIResponseError(Exception):
@@ -29,8 +47,14 @@ def build_generation_system_prompt() -> str:
         "- Вопрос однозначен; для single-choice верен РОВНО ОДИН вариант.\n"
         "- 4 правдоподобных варианта; дистракторы — типичные ошибки из смежных тем, "
         "не случайный мусор.\n"
-        "- Если нужен артефакт — встрой его в вопрос: код/JSON/SQL/XML как текст, "
-        "диаграммы — как Mermaid-код (artifact_kind='mermaid'). Никаких внешних ресурсов.\n"
+        "- Артефакт (если он нужен) кладётся ТОЛЬКО в поле artifact_content; "
+        "дублировать его в поле stem ЗАПРЕЩЕНО. stem — это лишь формулировка вопроса; "
+        "он может ссылаться на артефакт словами («на диаграмме…», «в запросе ниже…»), "
+        "но НЕ должен содержать сам код, разметку или ограждения ```.\n"
+        "- Допустимые типы артефактов для системного аналитика: SQL-запрос "
+        "(artifact_kind='sql'), JSON (json), XML (xml), диаграмма в синтаксисе "
+        "Mermaid (mermaid). НЕ используй код на языках программирования "
+        "(Python, JavaScript, Java и т.п.) — это тест для аналитиков, не программистов.\n"
         "- К каждому вопросу — короткое объяснение, почему верный ответ верен.\n"
         "Верни СТРОГО JSON по заданной схеме."
     )
@@ -115,11 +139,13 @@ class OpenAIClient:
             )
         if want_artifact:
             user_prompt += (
-                "\n\nВ КАЖДОМ вопросе этого набора ОБЯЗАТЕЛЬНО добавь артефакт, "
-                "встроенный в вопрос: фрагмент кода, SQL, JSON, XML или диаграмму "
-                "в синтаксисе Mermaid (artifact_kind != 'none', artifact_content "
-                "заполнен). Выбирай тип артефакта, уместный теме: для данных — SQL, "
-                "для интеграций — JSON/XML, для моделирования — Mermaid-диаграмма."
+                "\n\nВ КАЖДОМ вопросе этого набора добавь артефакт: SQL-запрос, "
+                "JSON, XML или Mermaid-диаграмму (НЕ код на языках программирования). "
+                "Артефакт помещай ТОЛЬКО в поле artifact_content (artifact_kind "
+                "укажи sql/json/xml/mermaid); в stem его НЕ дублируй и ограждения "
+                "``` в stem не ставь — stem только ссылается на артефакт словами. "
+                "Тип выбирай по теме: данные — SQL, интеграции — JSON/XML, "
+                "моделирование/процессы — Mermaid-диаграмма."
             )
         resp = await self._client.chat.completions.create(
             model=self.gen_model,
@@ -137,7 +163,12 @@ class OpenAIClient:
             },
         )
         data = _parse_json_content(resp)
-        return GeneratedBatch(**data)
+        batch = GeneratedBatch(**data)
+        # Defensive: strip any artifact text the model leaked into the stem so it
+        # is never shown twice (raw in the question + rendered as the artifact).
+        for q in batch.questions:
+            q.stem = _strip_artifact_from_stem(q.stem)
+        return batch
 
     async def validate_question(self, q: GeneratedQuestion) -> ValidationVerdict:
         prompt = (

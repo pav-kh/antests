@@ -218,3 +218,42 @@ async def test_generator_meets_artifact_quota(db_session):
         select(Question).where(Question.session_id == s.id))).scalars().all()
     with_artifact = [q for q in qs if q.artifact_kind != "none"]
     assert len(with_artifact) >= math.ceil(0.15 * total)
+
+
+@pytest.mark.asyncio
+async def test_generator_caps_artifacts_at_20_percent(db_session):
+    # Even if the model returns an artifact on EVERY question (ignoring
+    # want_artifact), the stored set must never exceed 20% — extras are stored
+    # text-only.
+    import math
+
+    class AlwaysArtifactClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self._calls = 0
+
+        async def generate_batch(
+            self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        ):
+            self._calls += 1
+            tid = plan_slice[0][0]
+            n = sum(c for _, c in plan_slice)
+            # always artifact, regardless of want_artifact
+            return GeneratedBatch(
+                questions=[
+                    _artifact_q(f"{tid}-{self._calls}-{i}", topic_id=tid)
+                    for i in range(n)
+                ]
+            )
+
+    total = 10
+    s = await _make_session(db_session, total=total)
+    plan = [("data", 5), ("integration", 5)]
+    gen = Generator(db_session, AlwaysArtifactClient(), batch_size=3)
+    await gen.run(s.id, plan=plan)
+    await db_session.refresh(s)
+    assert s.generated_count == total
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id))).scalars().all()
+    with_artifact = [q for q in qs if q.artifact_kind != "none"]
+    assert len(with_artifact) <= math.floor(0.20 * total)  # never exceeds the cap
