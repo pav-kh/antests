@@ -74,6 +74,101 @@ def test_system_prompt_forbids_programming_code_and_stem_duplication():
     assert "stem" in p
 
 
+def test_system_prompt_forbids_self_answering():
+    # The stem must not name the answer (or its type) so the question can't
+    # be answered just by reading the formulation.
+    p = build_generation_system_prompt().lower()
+    assert "не должен содержать" in p
+    assert "выдаёт ответ" in p or "выдаёт" in p
+
+
+@pytest.mark.asyncio
+async def test_validate_question_prompt_rejects_self_answering():
+    # The validator prompt must instruct rejecting questions that reveal the
+    # answer in the stem. Capture the prompt sent to the model.
+    captured = {}
+
+    class _CapturingCompletions:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _FakeCompletion(json.dumps({"valid": True, "reason": "ok"}))
+
+    class _CapturingChat:
+        completions = _CapturingCompletions()
+
+    class _CapturingClient:
+        chat = _CapturingChat()
+
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_CapturingClient())
+    q = GeneratedQuestion(**_valid_question_payload())
+    await client.validate_question(q)
+    prompt = " ".join(m["content"] for m in captured["messages"]).lower()
+    assert "сам себя" in prompt or "выдаёт" in prompt
+
+
+def test_stem_reveals_answer_detects_self_answering():
+    from app.generation.openai_client import _stem_reveals_answer
+    # The stem contains the full correct answer phrase verbatim -> revealed.
+    revealing = GeneratedQuestion(
+        topic_id="modeling", type="single",
+        stem="Здесь показана диаграмма последовательностей. "
+             "Как называется этот вид диаграммы?",
+        artifact_kind="mermaid", artifact_content="sequenceDiagram\nA->>B: x",
+        options=[
+            {"key": "a", "text": "Диаграмма последовательностей"},
+            {"key": "b", "text": "Диаграмма классов"},
+        ],
+        correct_keys=["a"], explanation="because",
+    )
+    assert _stem_reveals_answer(revealing) is True
+
+    # A normal question whose answer text does not appear in the stem.
+    clean = GeneratedQuestion(
+        topic_id="modeling", type="single",
+        stem="Какая нотация лучше отражает очередность сообщений во времени?",
+        artifact_kind="none", artifact_content=None,
+        options=[
+            {"key": "a", "text": "Диаграмма последовательностей"},
+            {"key": "b", "text": "Диаграмма классов"},
+        ],
+        correct_keys=["a"], explanation="because",
+    )
+    assert _stem_reveals_answer(clean) is False
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_drops_self_answering():
+    # Two questions: one whose stem reveals the answer, one clean. Only the
+    # clean one must survive generate_batch.
+    revealing = {
+        "topic_id": "modeling", "type": "single",
+        "stem": "Здесь показана диаграмма последовательностей. "
+                "Что это за вид диаграммы?",
+        "artifact_kind": "mermaid", "artifact_content": "sequenceDiagram\nA->>B: x",
+        "options": [
+            {"key": "a", "text": "Диаграмма последовательностей"},
+            {"key": "b", "text": "Диаграмма классов"},
+        ],
+        "correct_keys": ["a"], "explanation": "because",
+    }
+    clean = {
+        "topic_id": "modeling", "type": "single",
+        "stem": "Какая нотация показывает порядок сообщений во времени?",
+        "artifact_kind": "none", "artifact_content": None,
+        "options": [
+            {"key": "a", "text": "Диаграмма последовательностей"},
+            {"key": "b", "text": "Диаграмма классов"},
+        ],
+        "correct_keys": ["a"], "explanation": "because",
+    }
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_FakeOpenAI({"questions": [revealing, clean]}))
+    batch = await client.generate_batch("base", "exam", [("modeling", 2)])
+    assert len(batch.questions) == 1
+    assert batch.questions[0].stem == "Какая нотация показывает порядок сообщений во времени?"
+
+
 def test_strip_artifact_from_stem_removes_fenced_blocks():
     from app.generation.openai_client import _strip_artifact_from_stem
     # complete fenced mermaid block is removed

@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import math
+import random
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Question, TestSession
@@ -39,6 +41,12 @@ class Generator:
             artifact_target = max(1, math.ceil(0.15 * total_questions))
             artifact_cap = math.floor(0.20 * total_questions)
             artifact_count = 0
+            # Spread artifacts across DISTINCT topics instead of dumping the
+            # whole quota on the first artifact-friendly topic(s). We request an
+            # artifact at most once per topic; combined with the post-generation
+            # shuffle below, artifacts end up interspersed rather than clustered
+            # at the start of the test.
+            artifact_topics_used = set()
             # Process one topic at a time. Routing questions by the model's
             # returned topic_id is unreliable — the model echoes the topic TITLE
             # (or a paraphrase), not the canonical key — so we generate per topic
@@ -62,6 +70,7 @@ class Generator:
                     want_artifact = (
                         topic_id in ARTIFACT_TOPICS
                         and artifact_count < artifact_target
+                        and topic_id not in artifact_topics_used
                     )
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(topic_id, take)],
@@ -97,6 +106,7 @@ class Generator:
                         topic_stems.append(q.stem)
                         if kind != "none":
                             artifact_count += 1
+                            artifact_topics_used.add(topic_id)
                         session.generated_count = seq
                         # Commit after EACH validated question so generated_count
                         # rises live — the frontend sees smooth progress and can
@@ -108,6 +118,22 @@ class Generator:
                     session.status = "failed"
                     await self.db.commit()
                     return
+
+            # Shuffle the question order so artifacts and topics are interspersed
+            # rather than clustered at the start (they're generated topic-by-topic,
+            # and the artifact quota lands on the earliest artifact-friendly
+            # topics). Deterministic shuffle seeded by the session id, so the order
+            # is reproducible and testable (no Math.random/Date).
+            all_qs = (await self.db.execute(
+                select(Question).where(Question.session_id == session.id)
+                .order_by(Question.seq)
+            )).scalars().all()
+            rng = random.Random(str(session.id))
+            order = list(range(1, len(all_qs) + 1))
+            rng.shuffle(order)
+            for q, new_seq in zip(all_qs, order):
+                q.seq = new_seq
+            await self.db.commit()
 
             session.status = "ready"
             # NB: the generator no longer starts the timer. The timer starts

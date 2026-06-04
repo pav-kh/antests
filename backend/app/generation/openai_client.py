@@ -24,6 +24,33 @@ def _strip_artifact_from_stem(stem: str) -> str:
     return cleaned.strip()
 
 
+def _stem_reveals_answer(q) -> bool:
+    """Heuristic: does the stem give away the correct answer?
+
+    A question is "self-answering" when its formulation already contains the
+    correct answer text (e.g. stem says "на диаграмме последовательностей…" and
+    the answer IS "Диаграмма последовательностей"). We flag conservatively to
+    avoid over-dropping: only when the full answer phrase (>=8 chars) appears
+    verbatim, or a distinctive 2-word head of the answer (>=8 chars) appears as
+    a substring in the stem.
+    """
+    stem = q.stem.lower()
+    for opt in q.options:
+        if opt.key not in q.correct_keys:
+            continue
+        ans = opt.text.lower().strip()
+        # full answer phrase (>=8 chars) appears verbatim in the stem
+        if len(ans) >= 8 and ans in stem:
+            return True
+        # distinctive multi-word head (first 2 content words, >=8 chars) in stem
+        words = [w for w in ans.replace("-", " ").split() if len(w) > 4]
+        if len(words) >= 2:
+            phrase = " ".join(words[:2])
+            if len(phrase) >= 8 and phrase in stem:
+                return True
+    return False
+
+
 class OpenAIResponseError(Exception):
     pass
 
@@ -55,6 +82,11 @@ def build_generation_system_prompt() -> str:
         "(artifact_kind='sql'), JSON (json), XML (xml), диаграмма в синтаксисе "
         "Mermaid (mermaid). НЕ используй код на языках программирования "
         "(Python, JavaScript, Java и т.п.) — это тест для аналитиков, не программистов.\n"
+        "- Вопрос НЕ должен содержать в формулировке (stem) сам правильный ответ "
+        "или его тип. Например, если правильный ответ — «диаграмма последовательностей», "
+        "то в stem НЕЛЬЗЯ писать «на диаграмме последовательностей…» — это выдаёт ответ. "
+        "Описывай артефакт нейтрально («на приведённой диаграмме», «в показанном "
+        "сообщении/JSON ниже»), не называя тип, который требуется определить.\n"
         "- К каждому вопросу — короткое объяснение, почему верный ответ верен.\n"
         "Верни СТРОГО JSON по заданной схеме."
     )
@@ -143,7 +175,9 @@ class OpenAIClient:
                 "JSON, XML или Mermaid-диаграмму (НЕ код на языках программирования). "
                 "Артефакт помещай ТОЛЬКО в поле artifact_content (artifact_kind "
                 "укажи sql/json/xml/mermaid); в stem его НЕ дублируй и ограждения "
-                "``` в stem не ставь — stem только ссылается на артефакт словами. "
+                "``` в stem не ставь — stem ссылается на артефакт НЕЙТРАЛЬНО "
+                "(«на схеме ниже», «в показанном сообщении»), НЕ называя его тип, "
+                "если этот тип и есть правильный ответ. "
                 "Тип выбирай по теме: данные — SQL, интеграции — JSON/XML, "
                 "моделирование/процессы — Mermaid-диаграмма."
             )
@@ -168,6 +202,9 @@ class OpenAIClient:
         # is never shown twice (raw in the question + rendered as the artifact).
         for q in batch.questions:
             q.stem = _strip_artifact_from_stem(q.stem)
+        # Drop self-answering questions (stem reveals the answer). The generator
+        # regenerates to refill the count, so dropping a few here is safe.
+        batch.questions = [q for q in batch.questions if not _stem_reveals_answer(q)]
         return batch
 
     async def validate_question(self, q: GeneratedQuestion) -> ValidationVerdict:
@@ -178,6 +215,8 @@ class OpenAIClient:
             "- помеченный верный ответ фактически НЕВЕРЕН; или\n"
             "- дистрактор НА САМОМ ДЕЛЕ является полностью правильным ответом "
             "(не «может показаться», не «при некоторой трактовке», а объективно верен); или\n"
+            "- формулировка вопроса (stem) уже содержит правильный ответ или прямо "
+            "называет его тип, так что отвечать не нужно (вопрос «сам себя выдаёт»); или\n"
             "- вопрос бессмысленный/непонятный или артефакт не соответствует вопросу.\n\n"
             "ВАЖНО: дистракторы ОБЯЗАНЫ быть правдоподобными, но неверными — это норма, "
             "а не дефект. Не отклоняй вопрос за то, что дистрактор «звучит убедительно» "
