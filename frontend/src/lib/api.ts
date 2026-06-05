@@ -2,10 +2,12 @@ import type {
   Level, Mode, Question, Results, SessionStatus, SessionStatusResponse, User,
 } from "@/lib/types";
 
-// Default to same-origin ("") when unset so a production build behind a reverse
-// proxy uses relative URLs instead of a hardcoded localhost (which would fail
-// for users and be mixed-content-blocked under HTTPS). Local dev sets
-// NEXT_PUBLIC_API_BASE=http://localhost:8000 in .env.local.
+// Base prefix for API calls. In production set NEXT_PUBLIC_API_BASE=/api so
+// requests go to the same frontend origin and are proxied to the backend by the
+// Next.js rewrite in next.config.mjs — keeping the session cookie same-origin
+// (no cross-site cookie / CORS issues). Defaults to same-origin ("") when unset.
+// Local dev can set NEXT_PUBLIC_API_BASE=http://localhost:8000 to hit the
+// backend directly, or =/api to exercise the rewrite.
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 export class ApiError extends Error {
