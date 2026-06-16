@@ -19,9 +19,11 @@ describe("QuestionNav", () => {
     expect(screen.getByText("2").closest("[data-locked]")).toHaveAttribute("data-locked", "false");
   });
 
-  it("renders `count` cells when count exceeds total (open questions tail)", () => {
-    // total is closed-only (4); 2 open questions live at seq 5,6. The nav must
-    // render cells for them too, or they are unreachable in the exam UI.
+  it("renders `count` cells for the open-question tail and they are reachable", () => {
+    // total is closed-only (4); 2 open questions live at seq 5,6 and the backend
+    // reports generated_count=6. The nav must render cells for them AND leave
+    // them unlocked, or they're unreachable in the exam UI.
+    const onJump = vi.fn();
     render(
       <QuestionNav
         total={4}
@@ -29,11 +31,15 @@ describe("QuestionNav", () => {
         generatedCount={6}
         currentSeq={1}
         answeredSeqs={new Set()}
-        onJump={() => {}}
+        onJump={onJump}
       />
     );
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("6")).toBeInTheDocument();
+    const open2 = screen.getByText("6").closest("button")!;
+    expect(open2).not.toBeDisabled();          // unlocked
+    fireEvent.click(open2);
+    expect(onJump).toHaveBeenCalledWith(6);     // navigable
   });
 
   it("does not call onJump for a locked question", () => {
