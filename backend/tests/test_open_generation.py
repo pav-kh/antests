@@ -33,3 +33,12 @@ async def test_generate_open_questions_parses_two():
     assert len(qs) == 2
     assert isinstance(qs[0], OpenQuestion)
     assert qs[0].rubric
+
+
+@pytest.mark.asyncio
+async def test_judge_open_returns_feedback():
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_Client("Хорошо, но упустили эскалацию."))
+    fb = await client.judge_open(
+        stem="Опишите решения.", rubric="вопросы + решения", answer="Спросить статус.")
+    assert "эскалацию" in fb

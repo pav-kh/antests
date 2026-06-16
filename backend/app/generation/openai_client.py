@@ -322,6 +322,28 @@ class OpenAIClient:
         data = _parse_json_content(resp)
         return OpenBatch(**data).questions
 
+    async def judge_open(self, stem: str, rubric: str, answer: str) -> str:
+        prompt = (
+            "Оцени ответ студента на открытый вопрос по сертификации СА и дай "
+            "развёрнутую обратную связь (что хорошо, что упущено, как улучшить). "
+            "Опирайся на критерии (rubric). НЕ ставь балл — только текст. "
+            "Пиши по-русски, конкретно и доброжелательно.\n\n"
+            f"ВОПРОС:\n{stem}\n\nКРИТЕРИИ (rubric):\n{rubric}\n\n"
+            f"ОТВЕТ СТУДЕНТА:\n{answer}"
+        )
+        resp = await self._client.chat.completions.create(
+            model=self.validate_model,
+            messages=[
+                {"role": "system",
+                 "content": "Ты — наставник, оценивающий ответы системных аналитиков."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        content = resp.choices[0].message.content
+        if not content:
+            raise OpenAIResponseError("empty judge content")
+        return content
+
     async def recommend(self, level: str, weak_topics: list[tuple[str, float]]) -> str:
         lines = [
             f"- {get_topic(tid).title}: {round(acc * 100)}% верных"
