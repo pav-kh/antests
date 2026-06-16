@@ -45,3 +45,23 @@ class GeneratedBatch(BaseModel):
 class ValidationVerdict(BaseModel):
     valid: bool
     reason: str
+
+
+class OpenQuestion(BaseModel):
+    stem: str
+    rubric: str
+    explanation: str
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.stem.strip():
+            raise ValueError("stem required")
+        if not self.rubric.strip():
+            raise ValueError("rubric required")
+        if not self.explanation.strip():
+            raise ValueError("explanation required")
+        return self
+
+
+class OpenBatch(BaseModel):
+    questions: list[OpenQuestion]
