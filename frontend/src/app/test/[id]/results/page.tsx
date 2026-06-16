@@ -96,6 +96,25 @@ export default function ResultsPage() {
           <p style={{ marginTop: 10, color: "#5a6878" }}><b>Пояснение:</b> {q.explanation}</p>
         </div>
       ))}
+
+      {results.open_questions.length > 0 && (
+        <>
+          <h3 style={{ marginTop: 24 }}>Открытые вопросы</h3>
+          {results.open_questions.map((o) => (
+            <div key={o.id} className="card" style={{ marginTop: 12, borderLeft: "4px solid #2f6fed" }}>
+              <div className="label">Открытый вопрос {o.seq}</div>
+              <h4 style={{ margin: "8px 0" }}>{o.stem}</h4>
+              <div className="label" style={{ marginTop: 8 }}>Ваш ответ:</div>
+              <p style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>
+                {o.answer_text || "— (ответ не дан)"}
+              </p>
+              <div className="label" style={{ marginTop: 12 }}>Обратная связь:</div>
+              <p style={{ whiteSpace: "pre-wrap", marginTop: 4, color: "#1f3a5f" }}>{o.feedback}</p>
+              <p style={{ marginTop: 10, color: "#5a6878" }}><b>Разбор:</b> {o.explanation}</p>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
