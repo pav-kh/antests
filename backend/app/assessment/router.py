@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assessment import service
-from app.assessment.schemas import SubmitAnswerRequest
+from app.assessment.schemas import ResultsResponse, SubmitAnswerRequest
 from app.core.config import get_settings
 from app.db.base import get_session
 from app.db.models import TestSession, User
@@ -78,7 +78,7 @@ async def finish(
             "passed": session.passed, "status": session.status}
 
 
-@router.get("/sessions/{session_id}/results")
+@router.get("/sessions/{session_id}/results", response_model=ResultsResponse)
 async def results(
     session_id: uuid.UUID,
     user: User = Depends(current_user),

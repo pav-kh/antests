@@ -29,6 +29,15 @@ class QuestionReview(BaseModel):
     explanation: str
 
 
+class OpenReview(BaseModel):
+    id: str
+    seq: int
+    stem: str
+    answer_text: str
+    feedback: str
+    explanation: str
+
+
 class ResultsResponse(BaseModel):
     session_id: str
     level: str
@@ -40,3 +49,4 @@ class ResultsResponse(BaseModel):
     topic_breakdown: list[TopicBreakdown]
     recommendation: str
     questions: list[QuestionReview]
+    open_questions: list[OpenReview]

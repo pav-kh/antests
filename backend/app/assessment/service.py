@@ -1,9 +1,11 @@
+import asyncio
 import datetime as dt
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assessment.competency import load_competency, update_competency
+from app.assessment.open_eval import evaluate_open
 from app.assessment.recommendation import build_recommendation
 from app.assessment.scoring import is_answer_correct, is_closed, score
 from app.db.models import Answer, Question, TestSession
@@ -113,9 +115,6 @@ async def finish_session(
         )
     ).scalars().all()
     answer_by_q = {a.question_id: a for a in answers}
-
-    import asyncio
-    from app.assessment.open_eval import evaluate_open
 
     closed = [q for q in questions if is_closed(q.type)]
     open_qs = [q for q in questions if q.type == "open"]
@@ -237,7 +236,7 @@ async def get_results(db: AsyncSession, session_id) -> dict:
         })
 
     answered_closed = sum(
-        1 for q in closed if (answer_by_q.get(q.id) and answer_by_q[q.id].selected_keys)
+        1 for q in closed if (a := answer_by_q.get(q.id)) and a.selected_keys
     )
 
     return {
