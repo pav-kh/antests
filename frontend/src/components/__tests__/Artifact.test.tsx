@@ -50,4 +50,26 @@ describe("Artifact", () => {
     // must NOT contain an injected img from the raw content
     expect(el.querySelector("img")).toBeNull();
   });
+
+  it("falls back to the raw diagram code when mermaid render fails", async () => {
+    const mermaid = (await import("mermaid")).default;
+    // make render reject for this test (invalid diagram)
+    (mermaid.render as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Parse error")
+    );
+    const code = "flowchart TD broken [["; // broken syntax, single line
+    render(<Artifact kind="mermaid" content={code} />);
+    // after the failed render the user must see the raw code (in a <pre>),
+    // NOT an eternal "Отрисовка диаграммы…" placeholder.
+    await vi.waitFor(() => {
+      // the raw code appears, and the fallback caption is shown
+      expect(screen.getByText(/Диаграмма \(текстовое представление\)/)).toBeInTheDocument();
+      expect(screen.getByText(code)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Отрисовка диаграммы/)).not.toBeInTheDocument();
+    // restore the resolving mock for other tests
+    (mermaid.render as ReturnType<typeof vi.fn>).mockResolvedValue({
+      svg: "<svg data-testid='diagram'></svg>",
+    });
+  });
 });
