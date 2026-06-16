@@ -142,6 +142,20 @@ async def test_empty_open_answer_gets_stub_without_judge(db_session):
 
 
 @pytest.mark.asyncio
+async def test_unanswered_open_question_gets_stub_feedback(db_session):
+    # An open question with NO answer row at all (user never touched it) must
+    # still surface the stub feedback in results — not a blank string.
+    user, s, qs = await _seed(db_session)
+    await service.submit_answer(db_session, s.id, qs[0].id, selected_keys=["a"])
+    # qs[2] (the open question) is intentionally never submitted.
+    await service.finish_session(db_session, s.id, FakeJudgeClient(), weak_threshold=0.6)
+    res = await service.get_results(db_session, s.id)
+    o = res["open_questions"][0]
+    assert o["answer_text"] in (None, "")
+    assert "не ответ" in o["feedback"].lower() or "не дан" in o["feedback"].lower()
+
+
+@pytest.mark.asyncio
 async def test_all_open_session_does_not_crash(db_session):
     # A session with ONLY open questions (0 closed) must finish: score 0%, no crash.
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")

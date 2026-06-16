@@ -158,8 +158,15 @@ async def finish_session(
 
     for qid, feedback in judged:
         a = answer_by_q.get(qid)
-        if a is not None:
-            a.feedback = feedback
+        if a is None:
+            # The user never opened/submitted this open question, so there's no
+            # answer row. evaluate_open still returns the stub "you didn't
+            # answer" feedback — persist it on a fresh row so results show it.
+            a = Answer(session_id=session_id, question_id=qid,
+                       selected_keys=[], is_correct=None, answer_text=None)
+            db.add(a)
+            answer_by_q[qid] = a
+        a.feedback = feedback
 
     session.score_percent = result.percent
     session.passed = result.passed
