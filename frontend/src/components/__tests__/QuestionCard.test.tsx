@@ -51,4 +51,20 @@ describe("QuestionCard", () => {
     fireEvent.click(alpha);
     expect(onToggle).toHaveBeenCalledWith("a");
   });
+
+  it("renders a textarea for an open question and reports typed text", () => {
+    const onText = vi.fn();
+    const openQ: Question = {
+      id: "o1", seq: 81, topic_id: "open", type: "open",
+      stem: "Опишите решения.", artifact_kind: "none", artifact_content: null,
+      options: [],
+    };
+    render(
+      <QuestionCard question={openQ} selected={[]} onToggle={() => {}}
+        answerText="" onAnswerText={onText} />
+    );
+    const ta = screen.getByRole("textbox");
+    fireEvent.change(ta, { target: { value: "мой ответ" } });
+    expect(onText).toHaveBeenCalledWith("мой ответ");
+  });
 });

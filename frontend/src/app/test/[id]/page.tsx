@@ -14,6 +14,7 @@ export default function ExamPage() {
   const [status, setStatus] = useState<SessionStatusResponse | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
+  const [openText, setOpenText] = useState<Record<string, string>>({});
   const [currentSeq, setCurrentSeq] = useState(1);
   const [finishing, setFinishing] = useState(false);
 
@@ -55,8 +56,13 @@ export default function ExamPage() {
     api.listAnswers(id).then((prior) => {
       if (stop) return;
       const map: AnswerMap = {};
-      for (const a of prior) map[a.question_id] = a.selected_keys;
+      const omap: Record<string, string> = {};
+      for (const a of prior) {
+        if (a.selected_keys?.length) map[a.question_id] = a.selected_keys;
+        if (a.answer_text) omap[a.question_id] = a.answer_text;
+      }
       setAnswers((prev) => ({ ...map, ...prev })); // local edits win over restored
+      setOpenText((prev) => ({ ...omap, ...prev }));
     }).catch(() => { /* no prior answers / not critical */ });
     return () => { stop = true; };
   }, [id]);
@@ -76,14 +82,17 @@ export default function ExamPage() {
 
   const current = questions.find((q) => q.seq === currentSeq);
   const answeredSeqs = new Set(
-    questions.filter((q) => (answers[q.id]?.length ?? 0) > 0).map((q) => q.seq)
+    questions
+      .filter((q) =>
+        (answers[q.id]?.length ?? 0) > 0 || (openText[q.id]?.trim().length ?? 0) > 0)
+      .map((q) => q.seq)
   );
 
   async function onToggle(key: string) {
     if (!current) return;
     const next = toggleSelection(answers[current.id] ?? [], key, current.type);
     setAnswers((prev) => ({ ...prev, [current.id]: next }));
-    try { await api.submitAnswer(id, current.id, next); } catch { /* keep local */ }
+    try { await api.submitAnswer(id, current.id, { selected_keys: next }); } catch { /* keep local */ }
   }
 
   if (finishing) {
@@ -125,7 +134,16 @@ export default function ExamPage() {
         </div>
 
         {current ? (
-          <QuestionCard question={current} selected={answers[current.id] ?? []} onToggle={onToggle} />
+          <QuestionCard
+            question={current}
+            selected={answers[current.id] ?? []}
+            answerText={openText[current.id] ?? ""}
+            onToggle={onToggle}
+            onAnswerText={(text) => {
+              setOpenText((prev) => ({ ...prev, [current.id]: text }));
+              api.submitAnswer(id, current.id, { answer_text: text }).catch(() => {});
+            }}
+          />
         ) : isQuestionReady(currentSeq, status.generated_count) ? (
           <div className="card">Загрузка вопроса…</div>
         ) : (
