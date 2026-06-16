@@ -139,6 +139,25 @@ class Generator:
                 q.seq = new_seq
             await self.db.commit()
 
+            # Append exactly 2 open (free-text) questions after the closed pool.
+            # They use seq after all closed questions, carry a rubric for the
+            # LLM judge, and have no options/correct_keys. A failure here must not
+            # block readiness — open questions are a bonus section.
+            try:
+                open_qs = await self.client.generate_open_questions(session.level, count=2)
+                for oq in open_qs:
+                    seq += 1
+                    self.db.add(Question(
+                        session_id=session.id, seq=seq, topic_id="open",
+                        type="open", stem=oq.stem, artifact_kind="none",
+                        artifact_content=None, options=[], correct_keys=[],
+                        explanation=oq.explanation, rubric=oq.rubric,
+                        validation_status="passed",
+                    ))
+                await self.db.commit()
+            except Exception:
+                logger.exception("Open-question generation failed for session %s", session_id)
+
             session.status = "ready"
             # NB: the generator no longer starts the timer. The timer starts
             # when the user first opens the exam screen (POST /sessions/{id}/start),
