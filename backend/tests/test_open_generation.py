@@ -1,23 +1,53 @@
 import itertools
 import json
+import uuid
+
 import pytest
+from sqlalchemy import select
+
+from app.db.models import Question, TestSession, User
+from app.generation.generator import Generator
 from app.generation.openai_client import OpenAIClient
-from app.generation.schemas import OpenQuestion
+from app.generation.schemas import (
+    GeneratedBatch,
+    GeneratedQuestion,
+    OpenQuestion,
+    ValidationVerdict,
+)
 
 
 class _Msg:
-    def __init__(self, c): self.content = c
+    def __init__(self, c):
+        self.content = c
+
+
 class _Choice:
-    def __init__(self, c): self.message = _Msg(c); self.finish_reason = "stop"
+    def __init__(self, c):
+        self.message = _Msg(c)
+        self.finish_reason = "stop"
+
+
 class _Completion:
-    def __init__(self, c): self.choices = [_Choice(c)]
+    def __init__(self, c):
+        self.choices = [_Choice(c)]
+
+
 class _Completions:
-    def __init__(self, c): self._c = c
-    async def create(self, **kw): return _Completion(self._c)
+    def __init__(self, c):
+        self._c = c
+
+    async def create(self, **kw):
+        return _Completion(self._c)
+
+
 class _Chat:
-    def __init__(self, c): self.completions = _Completions(c)
+    def __init__(self, c):
+        self.completions = _Completions(c)
+
+
 class _Client:
-    def __init__(self, c): self.chat = _Chat(c)
+    def __init__(self, c):
+        self.chat = _Chat(c)
 
 
 @pytest.mark.asyncio
@@ -43,15 +73,6 @@ async def test_judge_open_returns_feedback():
     fb = await client.judge_open(
         stem="Опишите решения.", rubric="вопросы + решения", answer="Спросить статус.")
     assert "эскалацию" in fb
-
-
-import uuid
-from sqlalchemy import select
-from app.db.models import Question, TestSession, User
-from app.generation.generator import Generator
-from app.generation.schemas import (
-    GeneratedBatch, GeneratedQuestion, OpenQuestion, ValidationVerdict,
-)
 
 
 _stem_counter = itertools.count()
@@ -87,10 +108,14 @@ class FakeGenClient:
 @pytest.mark.asyncio
 async def test_generator_appends_two_open_questions(db_session):
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
-    db_session.add(user); await db_session.commit(); await db_session.refresh(user)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
     s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
                     total_questions=3, generated_count=0, time_limit_sec=7200)
-    db_session.add(s); await db_session.commit(); await db_session.refresh(s)
+    db_session.add(s)
+    await db_session.commit()
+    await db_session.refresh(s)
 
     gen = Generator(db_session, FakeGenClient(), batch_size=10)
     await gen.run(s.id, plan=[("data", 3)])
