@@ -65,13 +65,17 @@ export const api = {
     request<{ id: string; timer_started_at: string | null }>(`/sessions/${id}/start`, { method: "POST" }),
   sessionQuestions: (id: string) =>
     request<Question[]>(`/sessions/${id}/questions`),
-  submitAnswer: (id: string, question_id: string, selected_keys: string[]) =>
+  submitAnswer: (
+    id: string,
+    question_id: string,
+    payload: { selected_keys?: string[]; answer_text?: string },
+  ) =>
     request<{ question_id: string; recorded: boolean }>(`/sessions/${id}/answers`, {
       method: "POST",
-      body: JSON.stringify({ question_id, selected_keys }),
+      body: JSON.stringify({ question_id, ...payload }),
     }),
   listAnswers: (id: string) =>
-    request<{ question_id: string; selected_keys: string[] }[]>(`/sessions/${id}/answers`),
+    request<{ question_id: string; selected_keys: string[]; answer_text: string }[]>(`/sessions/${id}/answers`),
   finish: (id: string) =>
     request<{ id: string; score_percent: number; passed: boolean; status: SessionStatus }>(
       `/sessions/${id}/finish`, { method: "POST" }

@@ -2,7 +2,7 @@ export type Level = "base" | "specialist";
 export type Mode = "exam" | "adaptive";
 export type SessionStatus = "generating" | "ready" | "in_progress" | "finished" | "failed";
 export type ArtifactKind = "none" | "code" | "json" | "sql" | "xml" | "mermaid";
-export type QuestionType = "single" | "multi";
+export type QuestionType = "single" | "multi" | "open";
 
 export interface Option { key: string; text: string; }
 
@@ -42,6 +42,15 @@ export interface QuestionReview extends Question {
   explanation: string;
 }
 
+export interface OpenReview {
+  id: string;
+  seq: number;
+  stem: string;
+  answer_text: string;
+  feedback: string;
+  explanation: string;
+}
+
 export interface Results {
   session_id: string;
   level: Level;
@@ -53,6 +62,7 @@ export interface Results {
   topic_breakdown: TopicBreakdown[];
   recommendation: string;
   questions: QuestionReview[];
+  open_questions: OpenReview[];
 }
 
 export interface User { id: string; login: string; }
