@@ -2,15 +2,19 @@
 import { isQuestionReady } from "@/lib/examState";
 
 export function QuestionNav({
-  total, generatedCount, currentSeq, answeredSeqs, onJump,
+  total, count, generatedCount, currentSeq, answeredSeqs, onJump,
 }: {
   total: number;
+  // Number of nav cells to render. Defaults to `total` (closed-only), but the
+  // exam passes the true question count so the 2 open questions (which sit at
+  // seq > total) get cells and stay reachable.
+  count?: number;
   generatedCount: number;
   currentSeq: number;
   answeredSeqs: Set<number>;
   onJump: (seq: number) => void;
 }) {
-  const cells = Array.from({ length: total }, (_, i) => i + 1);
+  const cells = Array.from({ length: count ?? total }, (_, i) => i + 1);
   return (
     <div role="group" aria-label="Навигация по вопросам"
       style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>

@@ -340,6 +340,7 @@ class OpenAIClient:
                 return OpenBatch(**data).questions
             except Exception as e:  # noqa: BLE001 — retry on any failure, raise the last
                 last_err = e
+        assert last_err is not None  # loop ran ≥1 time, so this is always bound
         raise last_err
 
     async def judge_open(self, stem: str, rubric: str, answer: str) -> str:

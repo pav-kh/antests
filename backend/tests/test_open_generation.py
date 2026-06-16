@@ -170,3 +170,7 @@ async def test_generator_appends_two_open_questions(db_session):
     assert all(o.seq > max(c.seq for c in closed) for o in openq)
     assert all(o.rubric and o.options == [] and o.correct_keys == [] for o in openq)
     assert s.total_questions == 3
+    # generated_count must cover the open questions, else the exam UI's
+    # readiness check (seq <= generated_count) leaves them locked/unreachable.
+    assert s.generated_count == max(q.seq for q in qs)
+    assert s.generated_count >= max(o.seq for o in openq)

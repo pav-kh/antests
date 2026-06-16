@@ -81,6 +81,12 @@ export default function ExamPage() {
   if (!status) return <div style={{ padding: 40 }}>Загрузка…</div>;
 
   const current = questions.find((q) => q.seq === currentSeq);
+  // total_questions is closed-only by design; the 2 open questions sit at
+  // seq > total_questions. Drive navigation off the true last seq so they're
+  // reachable. Falls back to total_questions until questions have loaded.
+  const maxSeq = questions.length
+    ? Math.max(...questions.map((q) => q.seq))
+    : status.total_questions;
   const answeredSeqs = new Set(
     questions
       .filter((q) =>
@@ -112,6 +118,7 @@ export default function ExamPage() {
         <div style={{ margin: "10px 0" }}>
           <QuestionNav
             total={status.total_questions}
+            count={maxSeq}
             generatedCount={status.generated_count}
             currentSeq={currentSeq}
             answeredSeqs={answeredSeqs}
@@ -153,7 +160,7 @@ export default function ExamPage() {
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18 }}>
           <button className="btn btn-ghost" disabled={currentSeq <= 1}
             onClick={() => setCurrentSeq((s) => Math.max(1, s - 1))}>← Назад</button>
-          {currentSeq < status.total_questions ? (
+          {currentSeq < maxSeq ? (
             <button className="btn"
               disabled={!isQuestionReady(currentSeq + 1, status.generated_count)}
               onClick={() => setCurrentSeq((s) => s + 1)}>Далее →</button>

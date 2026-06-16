@@ -154,6 +154,11 @@ class Generator:
                         explanation=oq.explanation, rubric=oq.rubric,
                         validation_status="passed",
                     ))
+                # Bump generated_count to include the open questions so the
+                # exam UI's readiness check (seq <= generated_count) unlocks
+                # them. Only happens if open generation succeeded; on failure
+                # it stays at the closed count and the open seqs never exist.
+                session.generated_count = seq
                 await self.db.commit()
             except Exception:
                 logger.exception("Open-question generation failed for session %s", session_id)
