@@ -133,6 +133,30 @@ async def test_validate_question_prompt_rejects_artifact_type_identification():
 
 
 @pytest.mark.asyncio
+async def test_validate_question_prompt_checks_artifact_answer_consistency():
+    # The validator must reject questions where the marked answer contradicts what
+    # the artifact actually shows (e.g. "problem on the diagram" that isn't there).
+    captured = {}
+
+    class _CapturingCompletions:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _FakeCompletion(json.dumps({"valid": True, "reason": "ok"}))
+
+    class _CapturingChat:
+        completions = _CapturingCompletions()
+
+    class _CapturingClient:
+        chat = _CapturingChat()
+
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_CapturingClient())
+    await client.validate_question(GeneratedQuestion(**_valid_question_payload()))
+    prompt = " ".join(m["content"] for m in captured["messages"]).lower()
+    assert "противоречит" in prompt and "изображено" in prompt
+
+
+@pytest.mark.asyncio
 async def test_want_artifact_prompt_demands_content_analysis():
     # When asking for an artifact, the generation prompt must demand questions
     # that analyze the artifact's CONTENT, and forbid "what type is this?".
