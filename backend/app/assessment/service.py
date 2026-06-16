@@ -187,7 +187,7 @@ async def get_results(db: AsyncSession, session_id) -> dict:
     ).scalars().all()
     answer_by_q = {a.question_id: a for a in answers}
 
-    closed = [q for q in questions if q.type in ("single", "multi")]
+    closed = [q for q in questions if is_closed(q.type)]
     open_qs = [q for q in questions if q.type == "open"]
 
     per_topic: dict[str, list[int]] = {}
