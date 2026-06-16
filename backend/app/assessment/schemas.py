@@ -3,7 +3,8 @@ from pydantic import BaseModel
 
 class SubmitAnswerRequest(BaseModel):
     question_id: str
-    selected_keys: list[str]
+    selected_keys: list[str] | None = None
+    answer_text: str | None = None
 
 
 class TopicBreakdown(BaseModel):

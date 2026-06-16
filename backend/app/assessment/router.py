@@ -31,7 +31,8 @@ async def submit_answer(
     await _owned_session(db, session_id, user)
     try:
         answer = await service.submit_answer(
-            db, session_id, uuid.UUID(req.question_id), req.selected_keys
+            db, session_id, uuid.UUID(req.question_id),
+            selected_keys=req.selected_keys, answer_text=req.answer_text,
         )
     except service.SessionNotFinishable:
         raise HTTPException(status.HTTP_409_CONFLICT, "Session is not in a finishable state")

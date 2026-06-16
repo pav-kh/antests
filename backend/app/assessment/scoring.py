@@ -16,3 +16,9 @@ class ScoreResult:
 def score(correct_count: int, total: int, threshold_percent: float) -> ScoreResult:
     percent = round(100.0 * correct_count / total, 2) if total > 0 else 0.0
     return ScoreResult(percent=percent, passed=percent >= threshold_percent)
+
+
+def is_closed(question_type: str) -> bool:
+    """Open (free-text) questions are graded by an LLM and excluded from the
+    deterministic pass/fail score; only single/multi count."""
+    return question_type in ("single", "multi")
