@@ -289,41 +289,58 @@ class OpenAIClient:
             "сильный ответ — показывается на результатах). Пиши по-русски. "
             "Верни СТРОГО JSON по схеме."
         )
-        resp = await self._client.chat.completions.create(
-            model=self.gen_model,
-            messages=[
-                {"role": "system",
-                 "content": "Ты — экзаменатор сертификации системных аналитиков IBS."},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "open_batch",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "questions": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "stem": {"type": "string"},
-                                        "rubric": {"type": "string"},
-                                        "explanation": {"type": "string"},
-                                    },
-                                    "required": ["stem", "rubric", "explanation"],
+        # strict:true makes the API enforce the schema via constrained
+        # decoding. Without it, this small schema makes gpt-5.x echo the schema
+        # document itself (~50% of calls) instead of data. strict mode requires
+        # additionalProperties:false and every property listed in "required".
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "open_batch",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "stem": {"type": "string"},
+                                    "rubric": {"type": "string"},
+                                    "explanation": {"type": "string"},
                                 },
-                            }
-                        },
-                        "required": ["questions"],
+                                "required": ["stem", "rubric", "explanation"],
+                            },
+                        }
                     },
-                    "strict": False,
+                    "required": ["questions"],
                 },
+                "strict": True,
             },
-        )
-        data = _parse_json_content(resp)
-        return OpenBatch(**data).questions
+        }
+        # Defense in depth: even with strict:true a call can fail transiently
+        # (connection drop) or return an off-shape payload. Retry a couple of
+        # times before giving up so one bad response doesn't lose all open
+        # questions for the session.
+        last_err: Exception | None = None
+        for _attempt in range(3):
+            try:
+                resp = await self._client.chat.completions.create(
+                    model=self.gen_model,
+                    messages=[
+                        {"role": "system",
+                         "content": "Ты — экзаменатор сертификации системных аналитиков IBS."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format=response_format,
+                )
+                data = _parse_json_content(resp)
+                return OpenBatch(**data).questions
+            except Exception as e:  # noqa: BLE001 — retry on any failure, raise the last
+                last_err = e
+        raise last_err
 
     async def judge_open(self, stem: str, rubric: str, answer: str) -> str:
         prompt = (

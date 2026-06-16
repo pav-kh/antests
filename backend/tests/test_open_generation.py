@@ -50,20 +50,59 @@ class _Client:
         self.chat = _Chat(c)
 
 
+class _SeqCompletions:
+    """Returns each queued content string in turn, one per create() call."""
+
+    def __init__(self, contents):
+        self._contents = list(contents)
+        self.calls = 0
+
+    async def create(self, **kw):
+        i = min(self.calls, len(self._contents) - 1)
+        self.calls += 1
+        return _Completion(self._contents[i])
+
+
+class _SeqClient:
+    def __init__(self, contents):
+        self.chat = type("C", (), {"completions": _SeqCompletions(contents)})()
+
+
+_OPEN_PAYLOAD = {"questions": [
+    {"stem": "Опишите проблему повторных обращений и решения.",
+     "rubric": "вопросы клиенту + решения", "explanation": "хороший ответ раскрывает..."},
+    {"stem": "Как выявить причину задержки заявки?",
+     "rubric": "диагностические вопросы", "explanation": "..."},
+]}
+
+# What the model erroneously echoes ~50% of the time under strict:false — the
+# JSON Schema document itself instead of data conforming to it.
+_SCHEMA_ECHO = json.dumps({
+    "type": "object",
+    "properties": {"questions": {"type": "array", "items": {"type": "object"}}},
+})
+
+
 @pytest.mark.asyncio
 async def test_generate_open_questions_parses_two():
-    payload = {"questions": [
-        {"stem": "Опишите проблему повторных обращений и решения.",
-         "rubric": "вопросы клиенту + решения", "explanation": "хороший ответ раскрывает..."},
-        {"stem": "Как выявить причину задержки заявки?",
-         "rubric": "диагностические вопросы", "explanation": "..."},
-    ]}
     client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
-                          _client=_Client(json.dumps(payload)))
+                          _client=_Client(json.dumps(_OPEN_PAYLOAD)))
     qs = await client.generate_open_questions("base", count=2)
     assert len(qs) == 2
     assert isinstance(qs[0], OpenQuestion)
     assert qs[0].rubric
+
+
+@pytest.mark.asyncio
+async def test_generate_open_questions_retries_on_schema_echo():
+    # The model sometimes returns the schema document instead of data; one bad
+    # response must not fail generation — retry and succeed on the next call.
+    client = OpenAIClient(
+        api_key="x", gen_model="g", validate_model="v",
+        _client=_SeqClient([_SCHEMA_ECHO, json.dumps(_OPEN_PAYLOAD)]))
+    qs = await client.generate_open_questions("base", count=2)
+    assert len(qs) == 2
+    assert qs[0].stem
 
 
 @pytest.mark.asyncio
