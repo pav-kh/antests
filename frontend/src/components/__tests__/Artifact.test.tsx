@@ -21,6 +21,19 @@ describe("Artifact", () => {
     expect(pre.tagName).toBe("PRE");
   });
 
+  it("constrains a long artifact line so it cannot overflow the page", () => {
+    const longLine = '{"request":{"method":"GET","path":"/orders/42",'
+      + '"headers":{"Accept":"application/json"}},"resource":{"id":42}}';
+    render(<Artifact kind="json" content={longLine} />);
+    const pre = screen.getByText(longLine);
+    // width is capped to the container and the block scrolls/wraps internally
+    // instead of pushing the page wider.
+    expect(pre.style.maxWidth).toBe("100%");
+    expect(pre.style.overflowX).toBe("auto");
+    // long tokens must be allowed to break so they don't force horizontal page scroll
+    expect(["anywhere", "break-word"]).toContain(pre.style.overflowWrap);
+  });
+
   it("renders mermaid svg after render resolves", async () => {
     render(<Artifact kind="mermaid" content="graph TD; A-->B" />);
     const el = await screen.findByTestId("mermaid");

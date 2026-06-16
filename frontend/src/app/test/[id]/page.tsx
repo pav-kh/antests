@@ -114,7 +114,9 @@ export default function ExamPage() {
         </div>
       </aside>
 
-      <main style={{ padding: "26px 32px" }}>
+      {/* minWidth:0 lets this grid track shrink below its content width so a
+          wide artifact is clipped/scrolled inside, not pushed onto the page. */}
+      <main style={{ padding: "26px 32px", minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div style={{ fontWeight: 700, color: "#1f3a5f" }}>
             {status.level === "base" ? "Базовый" : "Специалист"} · {status.mode === "exam" ? "Экзамен" : "Тренировка"}

@@ -30,7 +30,12 @@ export function Artifact({ kind, content }: { kind: ArtifactKind; content: strin
   if (kind === "none" || !content) return null;
 
   if (kind === "mermaid") {
-    const boxStyle = { background: "#fff", borderRadius: 8, padding: 12, overflow: "auto" } as const;
+    const boxStyle = {
+      background: "#fff", borderRadius: 8, padding: 12,
+      // Cap to the container and scroll inside the box rather than widening the
+      // page if the diagram is large.
+      maxWidth: "100%", overflowX: "auto",
+    } as const;
     return svg
       ? <div data-testid="mermaid" style={boxStyle} dangerouslySetInnerHTML={{ __html: svg }} />
       : <div data-testid="mermaid" style={boxStyle}>Отрисовка диаграммы…</div>;
@@ -40,7 +45,12 @@ export function Artifact({ kind, content }: { kind: ArtifactKind; content: strin
     <pre
       style={{
         background: "#0f1b2d", color: "#cde2ff", borderRadius: 8, padding: "14px 16px",
-        fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13, overflow: "auto",
+        fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13,
+        // A long single-line artifact (e.g. minified JSON) must never push the
+        // page wider: cap width to the container, wrap long tokens, and keep any
+        // remaining overflow as a scrollbar INSIDE this block.
+        maxWidth: "100%", overflowX: "auto",
+        whiteSpace: "pre-wrap", overflowWrap: "anywhere",
       }}
     >
       {content}
