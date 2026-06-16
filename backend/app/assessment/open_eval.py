@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 MIN_ANSWER_CHARS = 10
 
 EMPTY_FEEDBACK = (
@@ -15,4 +19,6 @@ async def evaluate_open(judge_client, stem: str, rubric: str, answer: str) -> st
     try:
         return await judge_client.judge_open(stem, rubric, answer)
     except Exception:
+        # Non-fatal, but log so production failures are diagnosable.
+        logger.exception("Open-answer judging failed")
         return ""

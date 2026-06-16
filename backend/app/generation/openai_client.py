@@ -7,6 +7,7 @@ from app.generation.schemas import (
     GeneratedBatch,
     GeneratedQuestion,
     OpenBatch,
+    OpenQuestion,
     ValidationVerdict,
 )
 from app.generation.topics import get_topic
@@ -273,7 +274,9 @@ class OpenAIClient:
         data = _parse_json_content(resp)
         return ValidationVerdict(**data)
 
-    async def generate_open_questions(self, level: str, count: int = 2) -> list:
+    async def generate_open_questions(
+        self, level: str, count: int = 2
+    ) -> list[OpenQuestion]:
         prompt = (
             f"Сгенерируй {count} ОТКРЫТЫХ вопроса-кейса для системного аналитика "
             f"(уровень {level}). Каждый — короткая практическая ситуация, требующая "
