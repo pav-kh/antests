@@ -3,7 +3,12 @@ import re
 
 from openai import AsyncOpenAI
 
-from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
+from app.generation.schemas import (
+    GeneratedBatch,
+    GeneratedQuestion,
+    OpenBatch,
+    ValidationVerdict,
+)
 from app.generation.topics import get_topic
 
 # Matches a fenced code block (```lang ... ```), e.g. ```mermaid ... ``` — used
@@ -267,6 +272,55 @@ class OpenAIClient:
         )
         data = _parse_json_content(resp)
         return ValidationVerdict(**data)
+
+    async def generate_open_questions(self, level: str, count: int = 2) -> list:
+        prompt = (
+            f"Сгенерируй {count} ОТКРЫТЫХ вопроса-кейса для системного аналитика "
+            f"(уровень {level}). Каждый — короткая практическая ситуация, требующая "
+            "развёрнутого текстового ответа (НЕ выбор варианта). Пример: «Клиенты "
+            "часто пишут повторно, потому что не понимают, где их заявка и почему "
+            "задержка. Какие вопросы задать клиенту для выявления причин и какие "
+            "пути решения предложить?». Для КАЖДОГО верни: stem (текст задания), "
+            "rubric (критерии хорошего ответа — что обязательно раскрыть; "
+            "пользователю НЕ показывается), explanation (разбор: что отличает "
+            "сильный ответ — показывается на результатах). Пиши по-русски. "
+            "Верни СТРОГО JSON по схеме."
+        )
+        resp = await self._client.chat.completions.create(
+            model=self.gen_model,
+            messages=[
+                {"role": "system",
+                 "content": "Ты — экзаменатор сертификации системных аналитиков IBS."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "open_batch",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "questions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "stem": {"type": "string"},
+                                        "rubric": {"type": "string"},
+                                        "explanation": {"type": "string"},
+                                    },
+                                    "required": ["stem", "rubric", "explanation"],
+                                },
+                            }
+                        },
+                        "required": ["questions"],
+                    },
+                    "strict": False,
+                },
+            },
+        )
+        data = _parse_json_content(resp)
+        return OpenBatch(**data).questions
 
     async def recommend(self, level: str, weak_topics: list[tuple[str, float]]) -> str:
         lines = [
