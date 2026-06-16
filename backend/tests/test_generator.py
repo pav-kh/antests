@@ -182,6 +182,47 @@ async def test_generator_dedupes_repeated_stems_per_topic(db_session):
 
 
 @pytest.mark.asyncio
+async def test_generator_dedupes_across_topics(db_session):
+    # Bug 3 (Specialist): a stem produced in topic A must not reappear in topic B.
+    # Per-topic-only dedup missed this; dedup is now session-wide. This fake emits
+    # one shared stem ("SHARED") plus unique ones per call, across two topics.
+    class CrossDupClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self._calls = 0
+
+        async def generate_batch(
+            self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        ):
+            self._calls += 1
+            tid = plan_slice[0][0]
+            n = sum(c for _, c in plan_slice)
+            # ALWAYS offer "SHARED" first (even in topic 2), plus enough unique
+            # fillers. The generator must hard-skip the cross-topic "SHARED"
+            # duplicate yet still fill the topic from the unique fillers.
+            qs = [_dup_q("SHARED", topic_id=tid)]
+            i = 0
+            while len(qs) < n + 1:  # +1 extra so the topic fills after SHARED is skipped
+                qs.append(_dup_q(f"u-{self._calls}-{i}", topic_id=tid))
+                i += 1
+            return GeneratedBatch(questions=qs)
+
+    s = await _make_session(db_session, total=4)
+    # batch_size=3 so a single batch can yield SHARED + 2 unique fillers per topic
+    gen = Generator(db_session, CrossDupClient(), batch_size=3)
+    await gen.run(s.id, plan=[("data", 2), ("modeling", 2)])
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    assert s.generated_count == 4
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id))).scalars().all()
+    stems = [q.stem for q in qs]
+    # "SHARED" must appear at most once even though it was offered in BOTH topics
+    assert stems.count("SHARED") <= 1
+    assert len(set(stems)) == 4  # all 4 stored stems are distinct
+
+
+@pytest.mark.asyncio
 async def test_generator_meets_artifact_quota(db_session):
     # At least ceil(0.15 * total) questions must carry an artifact. The fake
     # returns SQL-artifact questions only when want_artifact is requested.

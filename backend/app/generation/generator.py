@@ -47,6 +47,12 @@ class Generator:
             # shuffle below, artifacts end up interspersed rather than clustered
             # at the start of the test.
             artifact_topics_used = set()
+            # SESSION-WIDE dedup: a stem seen in ANY topic blocks an identical one
+            # later, and we feed recently-generated stems back to the model so it
+            # diversifies. Per-topic-only dedup let near-duplicates slip across
+            # topics in a long (120-question) Specialist test.
+            seen_stems: set[str] = set()
+            recent_stems: list[str] = []
             # Process one topic at a time. Routing questions by the model's
             # returned topic_id is unreliable — the model echoes the topic TITLE
             # (or a paraphrase), not the canonical key — so we generate per topic
@@ -56,12 +62,6 @@ class Generator:
                 needed = count
                 attempts = 0
                 max_attempts = (count + 1) * (self.max_slot_retries + 1)
-                # Track stems generated for THIS topic so we can both ask the
-                # model to diversify (avoid_stems) and hard-skip exact repeats
-                # (seen_stems), preventing near-duplicate questions early in a
-                # test run.
-                topic_stems = []
-                seen_stems = set()
                 while needed > 0 and attempts < max_attempts:
                     attempts += 1
                     take = min(needed, self.batch_size)
@@ -74,7 +74,7 @@ class Generator:
                     )
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(topic_id, take)],
-                        avoid_stems=topic_stems, want_artifact=want_artifact,
+                        avoid_stems=recent_stems, want_artifact=want_artifact,
                     )
                     for q in batch.questions:
                         if needed <= 0:
@@ -103,7 +103,11 @@ class Generator:
                             validation_status="passed",
                         ))
                         needed -= 1
-                        topic_stems.append(q.stem)
+                        # Keep the most recent stems as the model's avoid-list
+                        # (cap to the last 40 so the prompt stays bounded).
+                        recent_stems.append(q.stem)
+                        if len(recent_stems) > 40:
+                            recent_stems = recent_stems[-40:]
                         if kind != "none":
                             artifact_count += 1
                             artifact_topics_used.add(topic_id)
