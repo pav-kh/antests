@@ -89,6 +89,7 @@ class Question(Base):
     options: Mapped[list] = mapped_column(JSONB, nullable=False)
     correct_keys: Mapped[list] = mapped_column(JSONB, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    rubric: Mapped[str | None] = mapped_column(Text, nullable=True)
     validation_status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending"
     )
@@ -110,7 +111,9 @@ class Answer(Base):
         UUID(as_uuid=True), ForeignKey("questions.id"), nullable=False, index=True
     )
     selected_keys: Mapped[list] = mapped_column(JSONB, nullable=False)
-    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     answered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
