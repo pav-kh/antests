@@ -17,6 +17,10 @@ def test_build_open_stem_has_all_blocks():
     assert "Задание: Сформулируйте до 5 уточняющих вопросов." in stem
     assert "Фокус ответа: Не нужно проектировать архитектуру." in stem
     assert "Критерии оценки: понимание бизнес-потребности; качество вопросов." in stem
-    # Blocks are newline-separated so the frontend can render them on separate lines
-    assert "\n" in stem
-    assert stem.count("\n\n") >= 1  # blank line between header/case and blocks
+    # Blocks appear in the correct order (a reordering bug must fail)
+    positions = [stem.index(x) for x in (
+        "до 2500 знаков", "Тип: открытый кейс", "В финтех-компании",
+        "Задание:", "Фокус ответа:", "Критерии оценки:")]
+    assert positions == sorted(positions)
+    assert stem.count("\n\n") == 2  # exactly two blank-line separators
+    assert "\n\n\n" not in stem     # no tripled newlines
