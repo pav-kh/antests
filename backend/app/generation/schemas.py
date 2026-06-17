@@ -61,7 +61,3 @@ class OpenQuestion(BaseModel):
         if not self.explanation.strip():
             raise ValueError("explanation required")
         return self
-
-
-class OpenBatch(BaseModel):
-    questions: list[OpenQuestion]
