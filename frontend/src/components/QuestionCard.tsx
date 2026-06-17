@@ -30,7 +30,7 @@ export function QuestionCard({
               resize: "vertical",
             }}
           />
-          <div className="label" style={{ marginTop: 6 }}>
+          <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
             До 2500 знаков с пробелами; достаточно тезисного, структурированного ответа.
           </div>
         </div>
