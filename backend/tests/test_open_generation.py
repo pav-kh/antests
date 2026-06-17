@@ -69,9 +69,17 @@ class _SeqClient:
 
 
 _OPEN_PAYLOAD = {"questions": [
-    {"stem": "Опишите проблему повторных обращений и решения.",
+    {"topic_title": "Повторные обращения клиентов",
+     "case": "Клиенты часто пишут повторно по статусу заявки.",
+     "task": "Сформулируйте до 5 уточняющих вопросов и до 4 решений.",
+     "focus": "Не проектируйте архитектуру; выявите причины.",
+     "criteria_visible": "качество вопросов; проверяемость решений.",
      "rubric": "вопросы клиенту + решения", "explanation": "хороший ответ раскрывает..."},
-    {"stem": "Как выявить причину задержки заявки?",
+    {"topic_title": "Диагностика задержки заявки",
+     "case": "Заявка задерживается на этапе согласования.",
+     "task": "Перечислите до 4 диагностических вопросов и гипотез.",
+     "focus": "Сфокусируйтесь на причинах, а не на UI.",
+     "criteria_visible": "полнота гипотез; приоритеты.",
      "rubric": "диагностические вопросы", "explanation": "..."},
 ]}
 
@@ -90,7 +98,11 @@ async def test_generate_open_questions_parses_two():
     qs = await client.generate_open_questions("base", count=2)
     assert len(qs) == 2
     assert isinstance(qs[0], OpenQuestion)
-    assert qs[0].rubric
+    # The stem is ASSEMBLED from parts via build_open_stem; the raw rubric stays
+    # separate and must not leak into the visible stem.
+    assert "Задание: Сформулируйте до 5 уточняющих вопросов" in qs[0].stem
+    assert qs[0].rubric == "вопросы клиенту + решения"
+    assert qs[0].rubric not in qs[0].stem
 
 
 @pytest.mark.asyncio
@@ -102,7 +114,36 @@ async def test_generate_open_questions_retries_on_schema_echo():
         _client=_SeqClient([_SCHEMA_ECHO, json.dumps(_OPEN_PAYLOAD)]))
     qs = await client.generate_open_questions("base", count=2)
     assert len(qs) == 2
-    assert qs[0].stem
+    # Second (valid) call's parts were assembled into the visible stem.
+    assert "Задание:" in qs[0].stem
+    assert qs[0].rubric
+
+
+@pytest.mark.asyncio
+async def test_generate_open_questions_assembles_stem_from_parts():
+    # The model returns structured PARTS; the client must assemble the visible
+    # stem via build_open_stem and keep rubric/explanation separate.
+    payload = {"questions": [{
+        "topic_title": "От бизнес-проблемы к требованиям",
+        "case": "В компании растёт число обращений по статусу заявки.",
+        "task": "Сформулируйте до 5 уточняющих вопросов и до 4 требований.",
+        "focus": "Не проектируйте архитектуру; перейдите к требованиям.",
+        "criteria_visible": "качество вопросов; проверяемость; приоритеты.",
+        "rubric": "Скрытые подробные критерии для судьи, которых нет в stem.",
+        "explanation": "Проверяется переход от проблемы к требованиям.",
+    }]}
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_Client(json.dumps(payload)))
+    qs = await client.generate_open_questions("base", count=1)
+    assert len(qs) == 1
+    q = qs[0]
+    assert "Задание: Сформулируйте до 5 уточняющих вопросов" in q.stem
+    assert "Фокус ответа: Не проектируйте архитектуру" in q.stem
+    assert "Критерии оценки: качество вопросов" in q.stem
+    assert "Тип: открытый кейс. От бизнес-проблемы к требованиям" in q.stem
+    assert q.rubric == "Скрытые подробные критерии для судьи, которых нет в stem."
+    assert q.rubric not in q.stem
+    assert q.explanation
 
 
 @pytest.mark.asyncio

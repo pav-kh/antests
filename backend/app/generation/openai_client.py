@@ -6,7 +6,6 @@ from openai import AsyncOpenAI
 from app.generation.schemas import (
     GeneratedBatch,
     GeneratedQuestion,
-    OpenBatch,
     OpenQuestion,
     ValidationVerdict,
 )
@@ -297,24 +296,29 @@ class OpenAIClient:
         return ValidationVerdict(**data)
 
     async def generate_open_questions(
-        self, level: str, count: int = 2
+        self, level: str, count: int = 3
     ) -> list[OpenQuestion]:
         prompt = (
-            f"Сгенерируй {count} ОТКРЫТЫХ вопроса-кейса для системного аналитика "
-            f"(уровень {level}). Каждый — короткая практическая ситуация, требующая "
-            "развёрнутого текстового ответа (НЕ выбор варианта). Пример: «Клиенты "
-            "часто пишут повторно, потому что не понимают, где их заявка и почему "
-            "задержка. Какие вопросы задать клиенту для выявления причин и какие "
-            "пути решения предложить?». Для КАЖДОГО верни: stem (текст задания), "
-            "rubric (критерии хорошего ответа — что обязательно раскрыть; "
-            "пользователю НЕ показывается), explanation (разбор: что отличает "
-            "сильный ответ — показывается на результатах). Пиши по-русски. "
-            "Верни СТРОГО JSON по схеме."
+            f"Сгенерируй {count} ОТКРЫТЫХ вопроса-кейса для сертификации системного "
+            f"аналитика (уровень {level}), в формате реального экзамена. Каждый — "
+            "практическая ситуация, требующая развёрнутого текстового ответа (НЕ "
+            "выбор варианта), объёмом ответа до 2500 знаков с пробелами. Для "
+            "КАЖДОГО верни структурные части:\n"
+            "- topic_title: короткая тема кейса (напр. «От бизнес-проблемы к "
+            "требованиям»);\n"
+            "- case: описание практической ситуации (2–4 предложения);\n"
+            "- task: что именно сделать, с числовыми рамками (напр. «до 5 "
+            "уточняющих вопросов, до 4 требований…»);\n"
+            "- focus: на чём сфокусироваться и что НЕ нужно делать;\n"
+            "- criteria_visible: краткие критерии оценки через точку с запятой "
+            "(показываются студенту);\n"
+            "- rubric: ПОДРОБНЫЕ скрытые критерии для проверяющего — что обязательно "
+            "должно быть в сильном ответе (студенту НЕ показывается, должен быть "
+            "детальнее, чем criteria_visible);\n"
+            "- explanation: краткий разбор, что отличает сильный ответ (показывается "
+            "на результатах).\n"
+            "Пиши по-русски. Верни СТРОГО JSON по схеме."
         )
-        # strict:true makes the API enforce the schema via constrained
-        # decoding. Without it, this small schema makes gpt-5.x echo the schema
-        # document itself (~50% of calls) instead of data. strict mode requires
-        # additionalProperties:false and every property listed in "required".
         response_format = {
             "type": "json_schema",
             "json_schema": {
@@ -329,11 +333,18 @@ class OpenAIClient:
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "stem": {"type": "string"},
+                                    "topic_title": {"type": "string"},
+                                    "case": {"type": "string"},
+                                    "task": {"type": "string"},
+                                    "focus": {"type": "string"},
+                                    "criteria_visible": {"type": "string"},
                                     "rubric": {"type": "string"},
                                     "explanation": {"type": "string"},
                                 },
-                                "required": ["stem", "rubric", "explanation"],
+                                "required": [
+                                    "topic_title", "case", "task", "focus",
+                                    "criteria_visible", "rubric", "explanation",
+                                ],
                             },
                         }
                     },
@@ -342,10 +353,6 @@ class OpenAIClient:
                 "strict": True,
             },
         }
-        # Defense in depth: even with strict:true a call can fail transiently
-        # (connection drop) or return an off-shape payload. Retry a couple of
-        # times before giving up so one bad response doesn't lose all open
-        # questions for the session.
         last_err: Exception | None = None
         for _attempt in range(3):
             try:
@@ -359,7 +366,20 @@ class OpenAIClient:
                     response_format=response_format,
                 )
                 data = _parse_json_content(resp)
-                return OpenBatch(**data).questions
+                return [
+                    OpenQuestion(
+                        stem=build_open_stem(
+                            topic_title=item["topic_title"],
+                            case=item["case"],
+                            task=item["task"],
+                            focus=item["focus"],
+                            criteria_visible=item["criteria_visible"],
+                        ),
+                        rubric=item["rubric"],
+                        explanation=item["explanation"],
+                    )
+                    for item in data["questions"]
+                ]
             except Exception as e:  # noqa: BLE001 — retry on any failure, raise the last
                 last_err = e
         assert last_err is not None  # loop ran ≥1 time, so this is always bound
