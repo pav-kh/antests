@@ -26,7 +26,7 @@ OPEN_PER_SESSION = 2
 
 
 def _sample_open_pool(pool, k, rng):
-    """Pick k distinct items from pool using rng. Returns ≤k items (all of pool
+    """Pick k distinct items from pool using rng. Returns <=k items (all of pool
     if it has fewer than k). Seeded rng → deterministic, reproducible choice."""
     if len(pool) <= k:
         return list(pool)

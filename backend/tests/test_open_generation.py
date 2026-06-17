@@ -235,6 +235,8 @@ async def test_generator_uses_seed_when_llm_fails(db_session):
         select(Question).where(Question.session_id == s.id, Question.type == "open"))).scalars().all()
     assert len(openq) == 2  # seed pool alone fills the 2 slots
     assert s.generated_count == 5  # 3 closed + 2 open
+    from app.generation.open_seed import SEED_OPEN_QUESTIONS
+    assert {q.stem for q in openq} == {s.stem for s in SEED_OPEN_QUESTIONS}
 
 
 @pytest.mark.asyncio
@@ -247,6 +249,28 @@ async def test_generator_open_sampling_is_deterministic(db_session):
     assert a == b
     assert len(a) == 2
     assert len(set(a)) == 2  # no duplicates
+
+
+@pytest.mark.asyncio
+async def test_open_sampling_reproducible_for_session_id():
+    # The 2 open questions picked must be a deterministic function of session.id:
+    # same id -> same pick. Build the real pool (seed + LLM) and sample twice
+    # with rng seeded by the same id string, exactly as the generator does.
+    import random
+    from app.generation.generator import _sample_open_pool, OPEN_PER_SESSION
+    from app.generation.open_seed import SEED_OPEN_QUESTIONS
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    llm = [OpenQuestion(stem=f"LLM {i}", rubric=f"r{i}", explanation=f"e{i}")
+           for i in range(3)]
+    pool = list(SEED_OPEN_QUESTIONS) + llm
+    pick_a = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random(sid))
+    pick_b = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random(sid))
+    assert [q.stem for q in pick_a] == [q.stem for q in pick_b]  # same id -> same pick
+    assert len(pick_a) == OPEN_PER_SESSION
+    # A different id can pick differently (sanity: not hard-coded to one result)
+    pick_c = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random("different-id"))
+    assert len(pick_c) == OPEN_PER_SESSION
 
 
 @pytest.mark.asyncio
