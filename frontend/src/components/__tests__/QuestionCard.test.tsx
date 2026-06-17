@@ -67,4 +67,21 @@ describe("QuestionCard", () => {
     fireEvent.change(ta, { target: { value: "мой ответ" } });
     expect(onText).toHaveBeenCalledWith("мой ответ");
   });
+
+  it("renders an open question's multiline stem and a length hint", () => {
+    const openQ: Question = {
+      id: "o1", seq: 81, topic_id: "open", type: "open",
+      stem: "Кейс…\n\nЗадание: сделайте X\nФокус ответа: Y\nКритерии оценки: Z",
+      artifact_kind: "none", artifact_content: null, options: [],
+    };
+    render(
+      <QuestionCard question={openQ} selected={[]} onToggle={() => {}}
+        answerText="" onAnswerText={() => {}} />
+    );
+    // Stem heading preserves newlines (pre-line) so blocks aren't collapsed
+    const heading = screen.getByRole("heading", { level: 3 });
+    expect(heading).toHaveStyle({ whiteSpace: "pre-line" });
+    // A hint about the 2500-char limit is visible
+    expect(screen.getByText(/2500 знаков/)).toBeInTheDocument();
+  });
 });

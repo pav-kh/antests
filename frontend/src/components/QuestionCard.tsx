@@ -16,19 +16,24 @@ export function QuestionCard({
       <div className="label">
         Вопрос {question.seq} · {question.topic_id} · {question.type === "single" ? "один ответ" : question.type === "multi" ? "несколько" : "развёрнутый ответ"}
       </div>
-      <h3 style={{ margin: "8px 0 16px" }}>{question.stem}</h3>
+      <h3 style={{ margin: "8px 0 16px", whiteSpace: question.type === "open" ? "pre-line" : undefined }}>{question.stem}</h3>
       <Artifact kind={question.artifact_kind} content={question.artifact_content} />
       {question.type === "open" ? (
-        <textarea
-          value={answerText}
-          onChange={(e) => onAnswerText?.(e.target.value)}
-          placeholder="Введите развёрнутый ответ…"
-          style={{
-            width: "100%", minHeight: 160, marginTop: 12, padding: "12px 14px",
-            border: "1px solid #e3e9f1", borderRadius: 9, font: "inherit",
-            resize: "vertical",
-          }}
-        />
+        <div>
+          <textarea
+            value={answerText}
+            onChange={(e) => onAnswerText?.(e.target.value)}
+            placeholder="Введите развёрнутый ответ…"
+            style={{
+              width: "100%", minHeight: 160, marginTop: 12, padding: "12px 14px",
+              border: "1px solid #e3e9f1", borderRadius: 9, font: "inherit",
+              resize: "vertical",
+            }}
+          />
+          <div className="label" style={{ marginTop: 6 }}>
+            До 2500 знаков с пробелами; достаточно тезисного, структурированного ответа.
+          </div>
+        </div>
       ) : (
         <div role="group" aria-label="Варианты ответа" style={{ marginTop: 16 }}>
           {question.options.map((o) => {
