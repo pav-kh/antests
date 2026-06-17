@@ -72,6 +72,28 @@ def _parse_json_content(resp):
         raise OpenAIResponseError(f"non-JSON response: {e}") from e
 
 
+def build_open_stem(
+    topic_title: str, case: str, task: str, focus: str, criteria_visible: str
+) -> str:
+    """Assemble the full visible stem of an open question.
+
+    Single source of the open-question format — used by both the seed module
+    and the LLM generation path so fixed and generated questions look identical.
+    The blocks are newline-separated; the frontend renders the stem with
+    white-space: pre-line so they appear on separate labelled lines, matching
+    the real BA certification layout.
+    """
+    return (
+        "Ответ: до 2500 знаков с пробелами; достаточно тезисного, "
+        "структурированного ответа.\n"
+        f"Тип: открытый кейс. {topic_title.strip()}\n\n"
+        f"{case.strip()}\n\n"
+        f"Задание: {task.strip()}\n"
+        f"Фокус ответа: {focus.strip()}\n"
+        f"Критерии оценки: {criteria_visible.strip()}"
+    )
+
+
 def build_generation_system_prompt() -> str:
     return (
         "Ты — экзаменатор сертификации системных аналитиков IBS. "
