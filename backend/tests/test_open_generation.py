@@ -185,6 +185,70 @@ class FakeGenClient:
         ]
 
 
+class FailingOpenClient(FakeGenClient):
+    async def generate_open_questions(self, level, count=3):
+        raise RuntimeError("openai down")
+
+
+@pytest.mark.asyncio
+async def test_generator_samples_two_from_pool(db_session):
+    user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
+                    total_questions=3, generated_count=0, time_limit_sec=7200)
+    db_session.add(s)
+    await db_session.commit()
+    await db_session.refresh(s)
+
+    gen = Generator(db_session, FakeGenClient(), batch_size=10)
+    await gen.run(s.id, plan=[("data", 3)])
+    await db_session.refresh(s)
+
+    qs = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id).order_by(Question.seq))).scalars().all()
+    openq = [q for q in qs if q.type == "open"]
+    assert len(openq) == 2  # exactly 2 sampled from the pool
+    assert s.generated_count == max(q.seq for q in qs)
+
+
+@pytest.mark.asyncio
+async def test_generator_uses_seed_when_llm_fails(db_session):
+    # If the LLM open-generation fails, the pool is still the seed cases, so the
+    # session still gets 2 open questions (more robust than before).
+    user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
+                    total_questions=3, generated_count=0, time_limit_sec=7200)
+    db_session.add(s)
+    await db_session.commit()
+    await db_session.refresh(s)
+
+    gen = Generator(db_session, FailingOpenClient(), batch_size=10)
+    await gen.run(s.id, plan=[("data", 3)])
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    openq = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id, Question.type == "open"))).scalars().all()
+    assert len(openq) == 2  # seed pool alone fills the 2 slots
+    assert s.generated_count == 5  # 3 closed + 2 open
+
+
+@pytest.mark.asyncio
+async def test_generator_open_sampling_is_deterministic(db_session):
+    import random
+    from app.generation.generator import _sample_open_pool
+    pool = [f"q{i}" for i in range(5)]
+    a = _sample_open_pool(pool, 2, random.Random("seed-x"))
+    b = _sample_open_pool(pool, 2, random.Random("seed-x"))
+    assert a == b
+    assert len(a) == 2
+    assert len(set(a)) == 2  # no duplicates
+
+
 @pytest.mark.asyncio
 async def test_generator_appends_two_open_questions(db_session):
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")

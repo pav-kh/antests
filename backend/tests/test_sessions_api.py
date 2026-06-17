@@ -3,7 +3,12 @@ import itertools
 
 import pytest
 
-from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
+from app.generation.schemas import (
+    GeneratedBatch,
+    GeneratedQuestion,
+    OpenQuestion,
+    ValidationVerdict,
+)
 
 _stem_counter = itertools.count()
 
@@ -28,6 +33,13 @@ class FakeClient:
 
     async def validate_question(self, q):
         return ValidationVerdict(valid=True, reason="ok")
+
+    async def generate_open_questions(self, level, count=3):
+        return [
+            OpenQuestion(stem=f"Открытый {i}", rubric=f"критерии {i}",
+                         explanation=f"разбор {i}")
+            for i in range(count)
+        ]
 
 
 @pytest.fixture(autouse=True)
@@ -69,11 +81,16 @@ async def test_create_adaptive_session_generates_and_becomes_ready(client):
             break
         await asyncio.sleep(0.05)
     assert body["status"] == "ready"
-    assert body["generated_count"] == body["total_questions"]
+    # total_questions is the CLOSED pool; 2 open questions are appended on top as
+    # a bonus section, so generated_count covers closed + 2 open.
+    assert body["generated_count"] == body["total_questions"] + 2
 
     qs = await client.get(f"/sessions/{sid}/questions")
     items = qs.json()
-    assert len(items) == body["total_questions"]
+    closed = [it for it in items if it["type"] in ("single", "multi")]
+    openq = [it for it in items if it["type"] == "open"]
+    assert len(closed) == body["total_questions"]
+    assert len(openq) == 2
     assert "correct_keys" not in items[0]
     assert "explanation" not in items[0]
     assert {"id", "seq", "topic_id", "type", "stem", "options"} <= set(items[0].keys())

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Question, TestSession
+from app.generation.open_seed import SEED_OPEN_QUESTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,20 @@ logger = logging.getLogger(__name__)
 ARTIFACT_TOPICS = {
     "data", "integration", "modeling", "architecture", "fundamentals", "security",
 }
+
+# How many open-question candidates the LLM generates. Pool = seed + this; we
+# sample OPEN_PER_SESSION. 3 gives variety (sometimes both real, sometimes a
+# mix) without extra cost. Raise as the seed pool grows.
+LLM_OPEN_CANDIDATES = 3
+OPEN_PER_SESSION = 2
+
+
+def _sample_open_pool(pool, k, rng):
+    """Pick k distinct items from pool using rng. Returns ≤k items (all of pool
+    if it has fewer than k). Seeded rng → deterministic, reproducible choice."""
+    if len(pool) <= k:
+        return list(pool)
+    return rng.sample(pool, k)
 
 
 class Generator:
@@ -139,13 +154,23 @@ class Generator:
                 q.seq = new_seq
             await self.db.commit()
 
-            # Append exactly 2 open (free-text) questions after the closed pool.
-            # They use seq after all closed questions, carry a rubric for the
-            # LLM judge, and have no options/correct_keys. A failure here must not
-            # block readiness — open questions are a bonus section.
+            # Build a pool of open-question candidates (fixed real cases + LLM)
+            # and sample OPEN_PER_SESSION of them. seq after the closed pool; a
+            # failure in LLM generation just shrinks the pool to the seed cases,
+            # so the session still gets its open questions. The whole block must
+            # not block readiness — open questions are a bonus section.
             try:
-                open_qs = await self.client.generate_open_questions(session.level, count=2)
-                for oq in open_qs:
+                pool = list(SEED_OPEN_QUESTIONS)
+                try:
+                    pool += await self.client.generate_open_questions(
+                        session.level, count=LLM_OPEN_CANDIDATES)
+                except Exception:
+                    logger.exception(
+                        "LLM open-question generation failed for session %s "
+                        "(falling back to seed pool)", session_id)
+                rng = random.Random(str(session.id))
+                chosen = _sample_open_pool(pool, OPEN_PER_SESSION, rng)
+                for oq in chosen:
                     seq += 1
                     self.db.add(Question(
                         session_id=session.id, seq=seq, topic_id="open",
@@ -154,14 +179,12 @@ class Generator:
                         explanation=oq.explanation, rubric=oq.rubric,
                         validation_status="passed",
                     ))
-                # Bump generated_count to include the open questions so the
-                # exam UI's readiness check (seq <= generated_count) unlocks
-                # them. Only happens if open generation succeeded; on failure
-                # it stays at the closed count and the open seqs never exist.
+                # Bump generated_count to include the open questions so the exam
+                # UI's readiness check (seq <= generated_count) unlocks them.
                 session.generated_count = seq
                 await self.db.commit()
             except Exception:
-                logger.exception("Open-question generation failed for session %s", session_id)
+                logger.exception("Open-question step failed for session %s", session_id)
 
             session.status = "ready"
             # NB: the generator no longer starts the timer. The timer starts

@@ -5,7 +5,12 @@ from sqlalchemy import select
 
 from app.db.models import Question, TestSession, User
 from app.generation.generator import Generator
-from app.generation.schemas import GeneratedBatch, GeneratedQuestion, ValidationVerdict
+from app.generation.schemas import (
+    GeneratedBatch,
+    GeneratedQuestion,
+    OpenQuestion,
+    ValidationVerdict,
+)
 
 
 import itertools
@@ -59,6 +64,13 @@ class FakeClient:
             return ValidationVerdict(valid=False, reason="rejected for test")
         return ValidationVerdict(valid=True, reason="ok")
 
+    async def generate_open_questions(self, level, count=3):
+        return [
+            OpenQuestion(stem=f"Открытый {i}", rubric=f"критерии {i}",
+                         explanation=f"разбор {i}")
+            for i in range(count)
+        ]
+
 
 async def _make_session(db, total=5, mode="exam", level="base"):
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
@@ -82,14 +94,16 @@ async def test_generator_fills_pool_and_marks_ready(db_session):
     await gen.run(s.id, plan=[("data", 5)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == 5
+    # 5 closed + 2 open (appended from the seed/LLM pool) = 7.
+    assert s.generated_count == 7
     # The timer is NOT started by the generator anymore — it starts when the
     # user opens the exam screen (POST /sessions/{id}/start).
     assert s.timer_started_at is None
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
-    assert len(qs) == 5
-    assert sorted(q.seq for q in qs) == [1, 2, 3, 4, 5]
+    closed = [q for q in qs if q.type != "open"]
+    assert len(closed) == 5
+    assert sorted(q.seq for q in closed) == [1, 2, 3, 4, 5]
     assert all(q.validation_status == "passed" for q in qs)
 
 
@@ -113,11 +127,13 @@ async def test_generator_completes_when_model_returns_topic_title_not_key(db_ses
     await gen.run(s.id, plan=[("data", 3)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == 3
+    # 3 closed + 2 open (appended from the seed/LLM pool) = 5.
+    assert s.generated_count == 5
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
+    closed = [q for q in qs if q.type != "open"]
     # stored topic_id must be the canonical KEY, not the title the model returned
-    assert all(q.topic_id == "data" for q in qs)
+    assert all(q.topic_id == "data" for q in closed)
 
 
 @pytest.mark.asyncio
@@ -127,7 +143,8 @@ async def test_generator_retries_rejected_questions(db_session):
     await gen.run(s.id, plan=[("data", 3)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == 3
+    # 3 closed + 2 open (appended from the seed/LLM pool) = 5.
+    assert s.generated_count == 5
 
 
 @pytest.mark.asyncio
@@ -173,10 +190,11 @@ async def test_generator_dedupes_repeated_stems_per_topic(db_session):
     await gen.run(s.id, plan=[("data", 4)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == 4
+    # 4 closed + 2 open (appended from the seed/LLM pool) = 6.
+    assert s.generated_count == 6
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
-    stems = [q.stem for q in qs]
+    stems = [q.stem for q in qs if q.type != "open"]
     assert len(stems) == 4
     assert len(set(stems)) == 4  # no duplicates stored
 
@@ -213,10 +231,11 @@ async def test_generator_dedupes_across_topics(db_session):
     await gen.run(s.id, plan=[("data", 2), ("modeling", 2)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == 4
+    # 4 closed + 2 open (appended from the seed/LLM pool) = 6.
+    assert s.generated_count == 6
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
-    stems = [q.stem for q in qs]
+    stems = [q.stem for q in qs if q.type != "open"]
     # "SHARED" must appear at most once even though it was offered in BOTH topics
     assert stems.count("SHARED") <= 1
     assert len(set(stems)) == 4  # all 4 stored stems are distinct
@@ -254,7 +273,8 @@ async def test_generator_meets_artifact_quota(db_session):
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == total
+    # total closed + 2 open (appended from the seed/LLM pool).
+    assert s.generated_count == total + 2
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     with_artifact = [q for q in qs if q.artifact_kind != "none"]
@@ -296,12 +316,16 @@ async def test_generator_shuffles_seq_and_spreads_artifacts(db_session):
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
     assert s.status == "ready"
-    assert s.generated_count == total
+    # total closed + 2 open (appended from the seed/LLM pool).
+    assert s.generated_count == total + 2
 
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
-    seqs = sorted(q.seq for q in qs)
-    # seq is a clean permutation of 1..total
+    # The seeded shuffle reorders only the closed pool (seq 1..total); the 2 open
+    # questions are appended afterwards at seq total+1, total+2.
+    closed = [q for q in qs if q.type != "open"]
+    seqs = sorted(q.seq for q in closed)
+    # closed-pool seq is a clean permutation of 1..total
     assert seqs == list(range(1, total + 1))
 
     artifacts = [q for q in qs if q.artifact_kind != "none"]
@@ -329,7 +353,9 @@ async def test_generator_shuffle_is_deterministic(db_session):
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id)
         .order_by(Question.seq))).scalars().all()
-    assert sorted(q.seq for q in qs) == list(range(1, 9))
+    # The shuffle reorders only the 8 closed questions; 2 open are appended at 9,10.
+    closed = [q for q in qs if q.type != "open"]
+    assert sorted(q.seq for q in closed) == list(range(1, 9))
 
     # Recompute the expected permutation from the same seed/algorithm.
     rng = random.Random(str(s.id))
@@ -373,7 +399,8 @@ async def test_generator_caps_artifacts_at_20_percent(db_session):
     gen = Generator(db_session, AlwaysArtifactClient(), batch_size=3)
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
-    assert s.generated_count == total
+    # total closed + 2 open (appended from the seed/LLM pool).
+    assert s.generated_count == total + 2
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     with_artifact = [q for q in qs if q.artifact_kind != "none"]
