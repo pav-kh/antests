@@ -1,8 +1,9 @@
 """Fixed pool of real open-ended certification cases.
 
-These are real BA-certification cases (base level). They live alongside
-LLM-generated open questions in the candidate pool; the generator samples 2
-per session. Add future cases by appending to SEED_OPEN_QUESTIONS.
+These are real BA-certification cases. How they're used depends on the level:
+ba samples from a candidate pool (seed + LLM); base/specialist use one
+random seed case (rng.choice) plus two themed LLM questions. Add future cases
+by appending to SEED_OPEN_QUESTIONS.
 
 Each case stores its PARTS and is assembled with build_open_stem so the format
 stays identical to LLM-generated questions (DRY).
