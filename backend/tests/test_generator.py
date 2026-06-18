@@ -329,7 +329,7 @@ async def test_generator_shuffles_seq_and_spreads_artifacts(db_session):
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
     assert s.status == "ready"
-    # total closed + 2 open (appended from the seed/LLM pool).
+    # total closed + 2 open (ba samples 2 from the seed/LLM pool).
     assert s.generated_count == total + 2
 
     qs = (await db_session.execute(
@@ -366,7 +366,8 @@ async def test_generator_shuffle_is_deterministic(db_session):
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id)
         .order_by(Question.seq))).scalars().all()
-    # The shuffle reorders only the 8 closed questions; 2 open are appended at 9,10.
+    # The shuffle reorders only the 8 closed questions; base appends 3 open
+    # (1 seed + 2 themed) afterwards at seq 9,10,11.
     closed = [q for q in qs if q.type != "open"]
     assert sorted(q.seq for q in closed) == list(range(1, 9))
 
