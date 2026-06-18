@@ -1,6 +1,6 @@
 from app.generation.topics import TOPICS
 
-LEVEL_TOTALS = {"base": 80, "specialist": 120, "ba": 40}
+LEVEL_TOTALS = {"base": 50, "specialist": 50, "ba": 40}
 
 # Target share of multi-answer (multiple correct) questions, per level. Soft
 # quota: passed into the generation prompt as guidance, not enforced by

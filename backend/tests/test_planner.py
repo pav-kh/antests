@@ -4,8 +4,16 @@ from app.generation.planner import plan_exam, plan_adaptive
 def test_exam_plan_totals_match_level():
     base = plan_exam("base")
     spec = plan_exam("specialist")
-    assert sum(c for _, c in base) == 80
-    assert sum(c for _, c in spec) == 120
+    assert sum(c for _, c in base) == 50
+    assert sum(c for _, c in spec) == 50
+
+
+def test_exam_plan_base_specialist_cover_all_10_topics_at_50():
+    for level in ("base", "specialist"):
+        plan = dict(plan_exam(level))
+        assert sum(plan.values()) == 50
+        assert len(plan) == 10
+        assert all(c >= 1 for c in plan.values())
 
 
 def test_exam_plan_covers_all_topics():
@@ -41,7 +49,7 @@ def test_base_plan_excludes_ba_only_topics():
     ba_only = {"stakeholders", "strategy", "process_analysis", "elicitation",
                "solution_value", "agile_ba", "ba_planning", "soft_skills"}
     assert not (ba_only & set(plan))
-    assert sum(plan.values()) == 80
+    assert sum(plan.values()) == 50
 
 
 def test_adaptive_plan_picks_weakest_topics():
