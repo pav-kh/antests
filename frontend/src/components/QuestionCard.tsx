@@ -1,6 +1,7 @@
 "use client";
 import type { Question } from "@/lib/types";
 import { Artifact } from "@/components/Artifact";
+import { OpenStem } from "@/components/OpenStem";
 
 export function QuestionCard({
   question, selected, onToggle, answerText = "", onAnswerText,
@@ -16,7 +17,13 @@ export function QuestionCard({
       <div className="label">
         Вопрос {question.seq} · {question.topic_id} · {question.type === "single" ? "один ответ" : question.type === "multi" ? "несколько" : "развёрнутый ответ"}
       </div>
-      <h3 style={{ margin: "8px 0 16px", whiteSpace: question.type === "open" ? "pre-line" : undefined }}>{question.stem}</h3>
+      {question.type === "open" ? (
+        <div style={{ margin: "8px 0 16px" }}>
+          <OpenStem stem={question.stem} />
+        </div>
+      ) : (
+        <h3 style={{ margin: "8px 0 16px" }}>{question.stem}</h3>
+      )}
       <Artifact kind={question.artifact_kind} content={question.artifact_content} />
       {question.type === "open" ? (
         <div>
@@ -30,9 +37,6 @@ export function QuestionCard({
               resize: "vertical",
             }}
           />
-          <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
-            До 2500 знаков с пробелами; достаточно тезисного, структурированного ответа.
-          </div>
         </div>
       ) : (
         <div role="group" aria-label="Варианты ответа" style={{ marginTop: 16 }}>

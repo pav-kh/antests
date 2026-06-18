@@ -68,20 +68,29 @@ describe("QuestionCard", () => {
     expect(onText).toHaveBeenCalledWith("мой ответ");
   });
 
-  it("renders an open question's multiline stem and a length hint", () => {
+  it("renders an open question's stem as labelled blocks", () => {
     const openQ: Question = {
       id: "o1", seq: 81, topic_id: "open", type: "open",
-      stem: "Кейс…\n\nЗадание: сделайте X\nФокус ответа: Y\nКритерии оценки: Z",
+      stem: [
+        "Ответ: до 2500 знаков с пробелами.",
+        "Тип: открытый кейс. Системное мышление",
+        "",
+        "Кейс про возвраты.",
+        "",
+        "Задание: сделайте X",
+        "Фокус ответа: Y",
+        "Критерии оценки: Z",
+      ].join("\n"),
       artifact_kind: "none", artifact_content: null, options: [],
     };
     render(
       <QuestionCard question={openQ} selected={[]} onToggle={() => {}}
         answerText="" onAnswerText={() => {}} />
     );
-    // Stem heading preserves newlines (pre-line) so blocks aren't collapsed
-    const heading = screen.getByRole("heading", { level: 3 });
-    expect(heading).toHaveStyle({ whiteSpace: "pre-line" });
-    // A hint about the 2500-char limit is visible
+    expect(screen.getByText("Системное мышление")).toBeInTheDocument();
+    expect(screen.getByText("Задание")).toBeInTheDocument();
+    expect(screen.getByText("Критерии оценки")).toBeInTheDocument();
     expect(screen.getByText(/2500 знаков/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 });

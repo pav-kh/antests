@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api, isUnauthorized } from "@/lib/api";
 import { Artifact } from "@/components/Artifact";
 import { Markdown } from "@/components/Markdown";
+import { OpenStem } from "@/components/OpenStem";
 import { weakTopics, correctCount } from "@/lib/results";
 import { topicTitle } from "@/lib/topics";
 import type { Results } from "@/lib/types";
@@ -112,7 +113,7 @@ export default function ResultsPage() {
           {results.open_questions.map((o) => (
             <div key={o.id} className="card" style={{ marginTop: 12, borderLeft: "4px solid #2f6fed" }}>
               <div className="label">Открытый вопрос {o.seq}</div>
-              <h4 style={{ margin: "8px 0" }}>{o.stem}</h4>
+              <div style={{ margin: "8px 0" }}><OpenStem stem={o.stem} /></div>
               <div className="label" style={{ marginTop: 8 }}>Ваш ответ:</div>
               <p style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>
                 {o.answer_text || "— (ответ не дан)"}
