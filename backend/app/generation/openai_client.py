@@ -178,7 +178,8 @@ class OpenAIClient:
         self._client = _client or AsyncOpenAI(api_key=api_key)
 
     async def generate_batch(
-        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
+        multi_ratio=None,
     ):
         topic_lines = []
         for tid, count in plan_slice:
@@ -223,6 +224,15 @@ class OpenAIClient:
                 "flowchart TD/LR, sequenceDiagram, classDiagram, stateDiagram-v2. "
                 "Не используй экзотические возможности и не оставляй незакрытых "
                 "скобок."
+            )
+        if multi_ratio:
+            pct = round(multi_ratio * 100)
+            user_prompt += (
+                f"\n\nВАЖНО про тип: не менее ~{pct}% вопросов в этом наборе делай "
+                "типа multi — где несколько верных вариантов (обычно 2–3 из 4–5), и в "
+                "correct_keys перечисли все верные. Остальные — single (ровно один "
+                "верный). Делай multi-вопросы честными: несколько вариантов "
+                "действительно корректны, а не искусственно."
             )
         resp = await self._client.chat.completions.create(
             model=self.gen_model,

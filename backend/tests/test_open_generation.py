@@ -171,7 +171,7 @@ def _closed_q(topic_id="data"):
 
 
 class FakeGenClient:
-    async def generate_batch(self, level, mode, plan_slice, avoid_stems=None, want_artifact=False):
+    async def generate_batch(self, level, mode, plan_slice, avoid_stems=None, want_artifact=False, multi_ratio=None):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_closed_q(plan_slice[0][0]) for _ in range(n)])
 

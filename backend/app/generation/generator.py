@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Question, TestSession
 from app.generation.open_seed import SEED_OPEN_QUESTIONS
+from app.generation.planner import LEVEL_MULTI_TARGET
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class Generator:
             # shuffle below, artifacts end up interspersed rather than clustered
             # at the start of the test.
             artifact_topics_used = set()
+            multi_ratio = LEVEL_MULTI_TARGET.get(session.level)
             # SESSION-WIDE dedup: a stem seen in ANY topic blocks an identical one
             # later, and we feed recently-generated stems back to the model so it
             # diversifies. Per-topic-only dedup let near-duplicates slip across
@@ -90,6 +92,7 @@ class Generator:
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(topic_id, take)],
                         avoid_stems=recent_stems, want_artifact=want_artifact,
+                        multi_ratio=multi_ratio,
                     )
                     for q in batch.questions:
                         if needed <= 0:
@@ -197,7 +200,8 @@ class Generator:
             await self.db.commit()
 
     async def _generate_with_retry(
-        self, level, mode, slice_, avoid_stems=None, want_artifact=False
+        self, level, mode, slice_, avoid_stems=None, want_artifact=False,
+        multi_ratio=None,
     ):
         delay = 0.0
         last = None
@@ -206,6 +210,7 @@ class Generator:
                 return await self.client.generate_batch(
                     level, mode, slice_,
                     avoid_stems=avoid_stems, want_artifact=want_artifact,
+                    multi_ratio=multi_ratio,
                 )
             except Exception as e:  # noqa: BLE001
                 last = e

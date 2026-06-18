@@ -21,7 +21,8 @@ def _q(topic_id="data"):
 
 class FakeClient:
     async def generate_batch(
-        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False
+        self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
+        multi_ratio=None,
     ):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])

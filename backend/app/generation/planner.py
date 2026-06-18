@@ -2,6 +2,11 @@ from app.generation.topics import TOPICS
 
 LEVEL_TOTALS = {"base": 80, "specialist": 120, "ba": 40}
 
+# Target share of multi-answer (multiple correct) questions, per level. Soft
+# quota: passed into the generation prompt as guidance, not enforced by
+# discarding. Levels absent here keep the default (no multi steering).
+LEVEL_MULTI_TARGET = {"ba": 0.7}
+
 
 def _largest_remainder(weights: dict[str, float], total: int) -> list[tuple[str, int]]:
     """Apportion `total` across keys by weight, guaranteeing the sum equals total.
