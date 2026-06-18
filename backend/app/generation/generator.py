@@ -19,6 +19,13 @@ ARTIFACT_TOPICS = {
     "data", "integration", "modeling", "architecture", "fundamentals", "security",
 }
 
+# Per-level override of artifact-friendly topics. ba (business analysis) only
+# gets diagrams on modeling/process_analysis — no SQL/JSON/XML, which are
+# system-analyst material. Levels absent here use ARTIFACT_TOPICS.
+LEVEL_ARTIFACT_TOPICS = {"ba": {"modeling", "process_analysis"}}
+# Levels whose artifacts must be Mermaid diagrams only (no sql/json/xml/code).
+LEVEL_ARTIFACT_MERMAID_ONLY = {"ba"}
+
 # How many open-question candidates the LLM generates. Pool = seed + this; we
 # sample OPEN_PER_SESSION. 3 gives variety (sometimes both real, sometimes a
 # mix) without extra cost. Raise as the seed pool grows.
@@ -64,6 +71,8 @@ class Generator:
             # at the start of the test.
             artifact_topics_used = set()
             multi_ratio = LEVEL_MULTI_TARGET.get(session.level)
+            artifact_topics = LEVEL_ARTIFACT_TOPICS.get(session.level, ARTIFACT_TOPICS)
+            mermaid_only = session.level in LEVEL_ARTIFACT_MERMAID_ONLY
             # SESSION-WIDE dedup: a stem seen in ANY topic blocks an identical one
             # later, and we feed recently-generated stems back to the model so it
             # diversifies. Per-topic-only dedup let near-duplicates slip across
@@ -85,14 +94,14 @@ class Generator:
                     # Only request artifacts on artifact-friendly topics, and
                     # only while we still owe the session its quota.
                     want_artifact = (
-                        topic_id in ARTIFACT_TOPICS
+                        topic_id in artifact_topics
                         and artifact_count < artifact_target
                         and topic_id not in artifact_topics_used
                     )
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(topic_id, take)],
                         avoid_stems=recent_stems, want_artifact=want_artifact,
-                        multi_ratio=multi_ratio,
+                        multi_ratio=multi_ratio, mermaid_only=mermaid_only,
                     )
                     for q in batch.questions:
                         if needed <= 0:
@@ -201,7 +210,7 @@ class Generator:
 
     async def _generate_with_retry(
         self, level, mode, slice_, avoid_stems=None, want_artifact=False,
-        multi_ratio=None,
+        multi_ratio=None, mermaid_only=False,
     ):
         delay = 0.0
         last = None
@@ -210,7 +219,7 @@ class Generator:
                 return await self.client.generate_batch(
                     level, mode, slice_,
                     avoid_stems=avoid_stems, want_artifact=want_artifact,
-                    multi_ratio=multi_ratio,
+                    multi_ratio=multi_ratio, mermaid_only=mermaid_only,
                 )
             except Exception as e:  # noqa: BLE001
                 last = e
