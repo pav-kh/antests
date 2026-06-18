@@ -255,3 +255,28 @@ async def test_session_marked_failed_when_client_construction_raises(client, mon
             break
         await asyncio.sleep(0.05)
     assert st.json()["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_create_ba_session_uses_40_and_90min(client):
+    await _register(client, "ba_user")
+    resp = await client.post("/sessions", json={"level": "ba", "mode": "exam"})
+    assert resp.status_code == 201
+    sid = resp.json()["id"]
+
+    for _ in range(50):
+        st = await client.get(f"/sessions/{sid}/status")
+        if st.json()["status"] == "ready":
+            break
+        await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/sessions/{sid}/status")).json()
+    assert body["level"] == "ba"
+    assert body["time_limit_sec"] == 90 * 60
+    assert body["total_questions"] == 40
+
+    qs = (await client.get(f"/sessions/{sid}/questions")).json()
+    closed = [q for q in qs if q["type"] in ("single", "multi")]
+    openq = [q for q in qs if q["type"] == "open"]
+    assert len(closed) == 40
+    assert len(openq) == 2

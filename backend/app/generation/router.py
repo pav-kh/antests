@@ -92,7 +92,7 @@ async def create_session(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    if req.level not in ("base", "specialist") or req.mode not in ("exam", "adaptive"):
+    if req.level not in ("base", "specialist", "ba") or req.mode not in ("exam", "adaptive"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid level or mode")
     settings = get_settings()
     try:

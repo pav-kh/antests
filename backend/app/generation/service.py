@@ -7,7 +7,7 @@ from app.auth import service as auth_service
 from app.db.models import Question, TestSession
 from app.generation.planner import LEVEL_TOTALS, plan_adaptive, plan_exam
 
-LEVEL_TIME_LIMITS = {"base": 120 * 60, "specialist": 180 * 60}
+LEVEL_TIME_LIMITS = {"base": 120 * 60, "specialist": 180 * 60, "ba": 90 * 60}
 
 
 class DailyLimitExceeded(Exception):
