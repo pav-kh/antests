@@ -72,6 +72,9 @@ class FakeClient:
             for i in range(count)
         ]
 
+    async def generate_open_on_topic(self, topic_title, hint):
+        return OpenQuestion(stem=f"Тема: {topic_title}", rubric="rt", explanation="et")
+
 
 async def _make_session(db, total=5, mode="exam", level="base"):
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
@@ -95,8 +98,8 @@ async def test_generator_fills_pool_and_marks_ready(db_session):
     await gen.run(s.id, plan=[("data", 5)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    # 5 closed + 2 open (appended from the seed/LLM pool) = 7.
-    assert s.generated_count == 7
+    # 5 closed + 3 open (base: 1 seed + 2 themed) = 8.
+    assert s.generated_count == 8
     # The timer is NOT started by the generator anymore — it starts when the
     # user opens the exam screen (POST /sessions/{id}/start).
     assert s.timer_started_at is None
@@ -129,8 +132,8 @@ async def test_generator_completes_when_model_returns_topic_title_not_key(db_ses
     await gen.run(s.id, plan=[("data", 3)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    # 3 closed + 2 open (appended from the seed/LLM pool) = 5.
-    assert s.generated_count == 5
+    # 3 closed + 3 open (base: 1 seed + 2 themed) = 6.
+    assert s.generated_count == 6
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     closed = [q for q in qs if q.type != "open"]
@@ -145,8 +148,8 @@ async def test_generator_retries_rejected_questions(db_session):
     await gen.run(s.id, plan=[("data", 3)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    # 3 closed + 2 open (appended from the seed/LLM pool) = 5.
-    assert s.generated_count == 5
+    # 3 closed + 3 open (base: 1 seed + 2 themed) = 6.
+    assert s.generated_count == 6
 
 
 @pytest.mark.asyncio
@@ -193,8 +196,8 @@ async def test_generator_dedupes_repeated_stems_per_topic(db_session):
     await gen.run(s.id, plan=[("data", 4)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    # 4 closed + 2 open (appended from the seed/LLM pool) = 6.
-    assert s.generated_count == 6
+    # 4 closed + 3 open (base: 1 seed + 2 themed) = 7.
+    assert s.generated_count == 7
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     stems = [q.stem for q in qs if q.type != "open"]
@@ -235,8 +238,8 @@ async def test_generator_dedupes_across_topics(db_session):
     await gen.run(s.id, plan=[("data", 2), ("modeling", 2)])
     await db_session.refresh(s)
     assert s.status == "ready"
-    # 4 closed + 2 open (appended from the seed/LLM pool) = 6.
-    assert s.generated_count == 6
+    # 4 closed + 3 open (base: 1 seed + 2 themed) = 7.
+    assert s.generated_count == 7
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
     stems = [q.stem for q in qs if q.type != "open"]
@@ -271,14 +274,16 @@ async def test_generator_meets_artifact_quota(db_session):
             )
 
     total = 10
-    s = await _make_session(db_session, total=total)
-    # artifact-friendly topics so the quota actually requests artifacts
-    plan = [("data", 5), ("integration", 5)]
+    # ba is the only level that still carries artifacts (Mermaid on
+    # modeling/process_analysis); base/specialist have artifacts turned off.
+    s = await _make_session(db_session, total=total, level="ba")
+    # ba artifact-friendly topics so the quota actually requests artifacts
+    plan = [("modeling", 5), ("process_analysis", 5)]
     gen = Generator(db_session, ArtifactClient(), batch_size=3)
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
     assert s.status == "ready"
-    # total closed + 2 open (appended from the seed/LLM pool).
+    # total closed + 2 open (ba samples 2 from the seed/LLM pool).
     assert s.generated_count == total + 2
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()
@@ -312,12 +317,14 @@ async def test_generator_shuffles_seq_and_spreads_artifacts(db_session):
             )
 
     total = 20
-    s = await _make_session(db_session, total=total)
-    # several artifact-friendly topics, generated in order. batch_size=1 so each
-    # request yields one question: the FIRST per topic is requested with an
-    # artifact (want_artifact), the rest are blocked by the per-topic spread
-    # guard — mirroring how artifacts end up on at most one question per topic.
-    plan = [("data", 5), ("integration", 5), ("modeling", 5), ("architecture", 5)]
+    # ba is the level that still carries artifacts (Mermaid on
+    # modeling/process_analysis). Mix the 2 ba artifact topics with 2 non-artifact
+    # ba topics so artifacts spread across the artifact-friendly topics only.
+    s = await _make_session(db_session, total=total, level="ba")
+    # batch_size=1 so each request yields one question: the FIRST per artifact
+    # topic is requested with an artifact (want_artifact), the rest are blocked
+    # by the per-topic spread guard — at most one artifact per topic.
+    plan = [("modeling", 5), ("process_analysis", 5), ("requirements", 5), ("strategy", 5)]
     gen = Generator(db_session, ArtifactClient(), batch_size=1)
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
@@ -401,12 +408,13 @@ async def test_generator_caps_artifacts_at_20_percent(db_session):
             )
 
     total = 10
-    s = await _make_session(db_session, total=total)
-    plan = [("data", 5), ("integration", 5)]
+    # ba is the level that still carries artifacts; use its artifact topics.
+    s = await _make_session(db_session, total=total, level="ba")
+    plan = [("modeling", 5), ("process_analysis", 5)]
     gen = Generator(db_session, AlwaysArtifactClient(), batch_size=3)
     await gen.run(s.id, plan=plan)
     await db_session.refresh(s)
-    # total closed + 2 open (appended from the seed/LLM pool).
+    # total closed + 2 open (ba samples 2 from the seed/LLM pool).
     assert s.generated_count == total + 2
     qs = (await db_session.execute(
         select(Question).where(Question.session_id == s.id))).scalars().all()

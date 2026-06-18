@@ -206,6 +206,9 @@ class FakeGenClient:
             for i in range(count)
         ]
 
+    async def generate_open_on_topic(self, topic_title, hint):
+        return OpenQuestion(stem=f"Тема: {topic_title}", rubric="rt", explanation="et")
+
 
 class FailingOpenClient(FakeGenClient):
     async def generate_open_questions(self, level, count=3):
@@ -218,7 +221,9 @@ async def test_generator_samples_two_from_pool(db_session):
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
+    # ba uses the seed+LLM POOL path (2 open sampled). base/specialist switched
+    # to the themed path, so this pool test targets ba to keep exercising pooling.
+    s = TestSession(user_id=user.id, level="ba", mode="exam", status="generating",
                     total_questions=3, generated_count=0, time_limit_sec=7200)
     db_session.add(s)
     await db_session.commit()
@@ -238,12 +243,14 @@ async def test_generator_samples_two_from_pool(db_session):
 @pytest.mark.asyncio
 async def test_generator_uses_seed_when_llm_fails(db_session):
     # If the LLM open-generation fails, the pool is still the seed cases, so the
-    # session still gets 2 open questions (more robust than before).
+    # session still gets 2 open questions (more robust than before). ba uses the
+    # seed+LLM pool path; base/specialist switched to themed, so this pool
+    # fallback test targets ba.
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
+    s = TestSession(user_id=user.id, level="ba", mode="exam", status="generating",
                     total_questions=3, generated_count=0, time_limit_sec=7200)
     db_session.add(s)
     await db_session.commit()
@@ -279,20 +286,20 @@ async def test_open_sampling_reproducible_for_session_id():
     # same id -> same pick. Build the real pool (seed + LLM) and sample twice
     # with rng seeded by the same id string, exactly as the generator does.
     import random
-    from app.generation.generator import _sample_open_pool, OPEN_PER_SESSION
+    from app.generation.generator import _sample_open_pool
     from app.generation.open_seed import SEED_OPEN_QUESTIONS
 
     sid = "11111111-2222-3333-4444-555555555555"
     llm = [OpenQuestion(stem=f"LLM {i}", rubric=f"r{i}", explanation=f"e{i}")
            for i in range(3)]
     pool = list(SEED_OPEN_QUESTIONS) + llm
-    pick_a = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random(sid))
-    pick_b = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random(sid))
+    pick_a = _sample_open_pool(pool, 2, random.Random(sid))
+    pick_b = _sample_open_pool(pool, 2, random.Random(sid))
     assert [q.stem for q in pick_a] == [q.stem for q in pick_b]  # same id -> same pick
-    assert len(pick_a) == OPEN_PER_SESSION
+    assert len(pick_a) == 2
     # A different id can pick differently (sanity: not hard-coded to one result)
-    pick_c = _sample_open_pool(pool, OPEN_PER_SESSION, random.Random("different-id"))
-    assert len(pick_c) == OPEN_PER_SESSION
+    pick_c = _sample_open_pool(pool, 2, random.Random("different-id"))
+    assert len(pick_c) == 2
 
 
 @pytest.mark.asyncio
@@ -301,7 +308,9 @@ async def test_generator_appends_two_open_questions(db_session):
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    s = TestSession(user_id=user.id, level="base", mode="exam", status="generating",
+    # ba uses the seed+LLM pool path (2 open). base/specialist switched to the
+    # themed path, so this pool-append test targets ba.
+    s = TestSession(user_id=user.id, level="ba", mode="exam", status="generating",
                     total_questions=3, generated_count=0, time_limit_sec=7200)
     db_session.add(s)
     await db_session.commit()

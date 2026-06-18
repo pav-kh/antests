@@ -56,9 +56,10 @@ _BATCH = {"questions": [{
 
 def test_ba_artifact_topics_are_modeling_and_process_analysis():
     assert LEVEL_ARTIFACT_TOPICS["ba"] == {"modeling", "process_analysis"}
-    # base/specialist absent -> they use the full ARTIFACT_TOPICS set
-    assert "base" not in LEVEL_ARTIFACT_TOPICS
-    assert "specialist" not in LEVEL_ARTIFACT_TOPICS
+    # base/specialist have artifacts turned off entirely (empty set) — code/data
+    # artifacts lost their pedagogical value there.
+    assert LEVEL_ARTIFACT_TOPICS["base"] == set()
+    assert LEVEL_ARTIFACT_TOPICS["specialist"] == set()
     assert "ba" in LEVEL_ARTIFACT_MERMAID_ONLY
     # ba drops the SA-only data/integration artifact topics from ARTIFACT_TOPICS
     assert "data" in ARTIFACT_TOPICS

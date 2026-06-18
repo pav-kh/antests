@@ -42,6 +42,9 @@ class FakeClient:
             for i in range(count)
         ]
 
+    async def generate_open_on_topic(self, topic_title, hint):
+        return OpenQuestion(stem=f"Тема: {topic_title}", rubric="rt", explanation="et")
+
 
 @pytest.fixture(autouse=True)
 def _patch_client(monkeypatch):
@@ -82,16 +85,17 @@ async def test_create_adaptive_session_generates_and_becomes_ready(client):
             break
         await asyncio.sleep(0.05)
     assert body["status"] == "ready"
-    # total_questions is the CLOSED pool; 2 open questions are appended on top as
-    # a bonus section, so generated_count covers closed + 2 open.
-    assert body["generated_count"] == body["total_questions"] + 2
+    # total_questions is the CLOSED pool; 3 open questions are appended on top as
+    # a bonus section (base: 1 seed + 2 themed), so generated_count covers
+    # closed + 3 open.
+    assert body["generated_count"] == body["total_questions"] + 3
 
     qs = await client.get(f"/sessions/{sid}/questions")
     items = qs.json()
     closed = [it for it in items if it["type"] in ("single", "multi")]
     openq = [it for it in items if it["type"] == "open"]
     assert len(closed) == body["total_questions"]
-    assert len(openq) == 2
+    assert len(openq) == 3
     assert "correct_keys" not in items[0]
     assert "explanation" not in items[0]
     assert {"id", "seq", "topic_id", "type", "stem", "options"} <= set(items[0].keys())
