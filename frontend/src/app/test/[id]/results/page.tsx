@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api, isUnauthorized } from "@/lib/api";
 import { Artifact } from "@/components/Artifact";
 import { Markdown } from "@/components/Markdown";
-import { weakTopics } from "@/lib/results";
+import { weakTopics, correctCount } from "@/lib/results";
 import { topicTitle } from "@/lib/topics";
 import type { Results } from "@/lib/types";
 
@@ -25,6 +25,7 @@ export default function ResultsPage() {
   if (!results) return <div style={{ padding: 40 }}>Загрузка результатов…</div>;
 
   const weak = weakTopics(results.topic_breakdown, 0.6);
+  const correct = correctCount(results.topic_breakdown);
 
   return (
     <div style={{ maxWidth: 820, margin: "32px auto", padding: "0 16px" }}>
@@ -34,7 +35,10 @@ export default function ResultsPage() {
           {results.score_percent}%
         </div>
         <div>{results.passed ? "Тест сдан ✓" : "Тест не сдан ✗"}</div>
-        <div className="label" style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, fontWeight: 600, color: "#1f3a5f" }}>
+          Правильных ответов: {correct} / {results.total_questions}
+        </div>
+        <div className="label" style={{ marginTop: 4 }}>
           Отвечено {results.answered_count} / {results.total_questions}
         </div>
       </div>
