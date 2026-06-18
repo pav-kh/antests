@@ -94,6 +94,57 @@ async def test_finish_scores_session_and_updates_competency(db_session):
 
 
 @pytest.mark.asyncio
+async def test_ba_level_has_70_threshold():
+    # Regression guard: a ba session must have a pass threshold so finish_session
+    # can index LEVEL_THRESHOLDS by level without KeyError.
+    assert service.LEVEL_THRESHOLDS["ba"] == 70.0
+
+
+async def _seed_ba_session_10q(db, correct_n):
+    """Seed a level='ba' session with 10 single-choice questions, the first
+    `correct_n` of which will be answered correctly. Returns (user, session, qs)."""
+    user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    s = TestSession(
+        user_id=user.id, level="ba", mode="exam", status="ready",
+        total_questions=10, generated_count=10, time_limit_sec=7200,
+    )
+    db.add(s)
+    await db.commit()
+    await db.refresh(s)
+    qs = []
+    for i in range(1, 11):
+        q = Question(
+            session_id=s.id, seq=i, topic_id="analysis", type="single", stem="Q?",
+            artifact_kind="none", artifact_content=None,
+            options=[{"key": "a", "text": "x"}, {"key": "b", "text": "y"}],
+            correct_keys=["a"], explanation="because", validation_status="passed",
+        )
+        db.add(q)
+        qs.append(q)
+    await db.commit()
+    for q in qs:
+        await db.refresh(q)
+    return user, s, qs
+
+
+@pytest.mark.asyncio
+async def test_finish_ba_session_uses_70_threshold(db_session):
+    # A ba session must finish without KeyError and apply the 70% pass threshold:
+    # 7/10 correct == 70.0% which is >= 70.0, so it passes.
+    user, s, qs = await _seed_ba_session_10q(db_session, correct_n=7)
+    for i, q in enumerate(qs):
+        await service.submit_answer(db_session, s.id, q.id, ["a"] if i < 7 else ["b"])
+    await service.finish_session(db_session, s.id, FakeRecoClient(), weak_threshold=0.6)
+    await db_session.refresh(s)
+    assert s.status == "finished"
+    assert float(s.score_percent) == 70.0
+    assert s.passed is True
+
+
+@pytest.mark.asyncio
 async def test_double_finish_does_not_double_count_competency(db_session):
     from sqlalchemy import select
 

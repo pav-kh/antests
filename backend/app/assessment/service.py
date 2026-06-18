@@ -15,7 +15,7 @@ class SessionNotFinishable(Exception):
     """Raised when finishing or answering a session whose status doesn't allow it."""
 
 
-LEVEL_THRESHOLDS = {"base": 70.0, "specialist": 75.0}
+LEVEL_THRESHOLDS = {"base": 70.0, "specialist": 75.0, "ba": 70.0}
 
 
 async def _get_question(db: AsyncSession, session_id, question_id) -> Question | None:
