@@ -13,17 +13,21 @@ def test_proportions_sum_to_one_per_level():
 
 
 def test_ba_proportions_present_and_positive():
-    # ba weights need not sum to 1.0 — the planner normalizes them. Every topic
-    # must carry a ba weight (>=0), and the total must be positive.
-    ba_total = sum(t.proportions["ba"] for t in topics.TOPICS)
-    assert ba_total > 0
+    # Every topic must carry a ba weight; the column total must be positive.
+    # (ba weights are not consumed yet — a later task wires the planner to read
+    # proportions["ba"]; this guards the data shape until then. They need NOT
+    # sum to 1.0 — the planner normalizes per-level when it does consume them.)
     assert all("ba" in t.proportions for t in topics.TOPICS)
+    assert all(t.proportions["ba"] >= 0 for t in topics.TOPICS)
+    assert sum(t.proportions["ba"] for t in topics.TOPICS) > 0
 
 
 def test_methodology_raci_is_project_role_angle():
     m = topics.get_topic("methodology")
     joined = " ".join(m.subtopics)
-    assert "RACI как распределение ролей" in joined
+    # Assert the FULL reworded phrase, incl. the "по задачам проекта" angle that
+    # distinguishes it from the stakeholders topic's RACI-as-analysis framing.
+    assert "RACI как распределение ролей по задачам проекта" in joined
 
 
 def test_every_topic_has_id_title_and_subtopics():
