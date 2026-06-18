@@ -5,7 +5,7 @@ LEVEL_TOTALS = {"base": 50, "specialist": 50, "ba": 40}
 # Target share of multi-answer (multiple correct) questions, per level. Soft
 # quota: passed into the generation prompt as guidance, not enforced by
 # discarding. Levels absent here keep the default (no multi steering).
-LEVEL_MULTI_TARGET = {"ba": 0.7}
+LEVEL_MULTI_TARGET = {"ba": 0.7, "base": 0.7, "specialist": 0.7}
 
 
 def _largest_remainder(weights: dict[str, float], total: int) -> list[tuple[str, int]]:

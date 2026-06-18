@@ -45,8 +45,9 @@ _VALID_BATCH = {"questions": [{
 
 def test_ba_has_multi_target():
     assert LEVEL_MULTI_TARGET.get("ba") == 0.7
-    assert "base" not in LEVEL_MULTI_TARGET
-    assert "specialist" not in LEVEL_MULTI_TARGET
+    # base/specialist now also steer ~70% multi
+    assert LEVEL_MULTI_TARGET.get("base") == 0.7
+    assert LEVEL_MULTI_TARGET.get("specialist") == 0.7
 
 
 @pytest.mark.asyncio
