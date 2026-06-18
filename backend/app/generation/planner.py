@@ -1,6 +1,6 @@
 from app.generation.topics import TOPICS
 
-LEVEL_TOTALS = {"base": 80, "specialist": 120}
+LEVEL_TOTALS = {"base": 80, "specialist": 120, "ba": 40}
 
 
 def _largest_remainder(weights: dict[str, float], total: int) -> list[tuple[str, int]]:
@@ -30,7 +30,13 @@ def plan_exam(level: str) -> list[tuple[str, int]]:
     weights = {t.id: t.proportions[level] for t in TOPICS}
     plan = _largest_remainder(weights, total)
     present = {tid for tid, _ in plan}
-    missing = [t.id for t in TOPICS if t.id not in present]
+    # Backfill only topics that have a non-zero weight for THIS level — a topic
+    # weighted 0 for the level (e.g. a ba-only topic under "specialist") must
+    # never be force-injected into that level's plan.
+    missing = [
+        t.id for t in TOPICS
+        if t.id not in present and t.proportions[level] > 0
+    ]
     plan_d = dict(plan)
     for tid in missing:
         donor = max(plan_d, key=plan_d.get)

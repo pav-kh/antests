@@ -12,6 +12,36 @@ def test_exam_plan_covers_all_topics():
     plan = dict(plan_exam("specialist"))
     assert len(plan) == 10
     assert all(c >= 1 for c in plan.values())
+    # ba-only topics (specialist weight 0) must NOT leak into the specialist plan
+    ba_only = {"stakeholders", "strategy", "process_analysis", "elicitation",
+               "solution_value", "agile_ba", "ba_planning", "soft_skills"}
+    assert not (ba_only & set(plan))
+
+
+def test_exam_plan_ba_total_is_40():
+    plan = plan_exam("ba")
+    assert sum(c for _, c in plan) == 40
+
+
+def test_exam_plan_ba_covers_all_18_topics():
+    plan = dict(plan_exam("ba"))
+    assert len(plan) == 18  # every topic has ba>0, so all appear
+    assert all(c >= 1 for c in plan.values())
+
+
+def test_exam_plan_ba_core_topics_dominate():
+    plan = dict(plan_exam("ba"))
+    core = ["requirements", "process_analysis", "stakeholders", "strategy",
+            "elicitation", "solution_value", "agile_ba"]
+    assert sum(plan[t] for t in core) >= 20  # >= half of 40
+
+
+def test_base_plan_excludes_ba_only_topics():
+    plan = dict(plan_exam("base"))
+    ba_only = {"stakeholders", "strategy", "process_analysis", "elicitation",
+               "solution_value", "agile_ba", "ba_planning", "soft_skills"}
+    assert not (ba_only & set(plan))
+    assert sum(plan.values()) == 80
 
 
 def test_adaptive_plan_picks_weakest_topics():
