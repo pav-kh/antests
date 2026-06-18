@@ -66,6 +66,42 @@ async def _seed_session(db, level):
     return s
 
 
+class VolunteersArtifactClient(FakeClient):
+    """Returns an artifact on EVERY closed question even though want_artifact is
+    False — mirrors the model spontaneously adding code/data the prompt didn't
+    ask for. On an artifacts-off level it must be stripped to text-only."""
+
+    async def generate_batch(self, level, mode, plan_slice, avoid_stems=None,
+                             want_artifact=False, multi_ratio=None, mermaid_only=False):
+        n = sum(c for _, c in plan_slice)
+        tid = plan_slice[0][0]
+        out = []
+        for i in range(n):
+            q = _closed(tid)
+            q.artifact_kind = "sql"
+            q.artifact_content = "SELECT 1;"
+            out.append(q)
+        return GeneratedBatch(questions=out)
+
+
+@pytest.mark.asyncio
+async def test_base_strips_volunteered_artifacts(db_session):
+    # Artifacts-off levels (base/specialist) must NOT store an artifact the model
+    # volunteers unprompted — it's stripped to text-only. Use 10 closed so the
+    # 20% cap (floor(0.20*10)=2) does NOT mask the bug: without the artifacts-off
+    # strip, the first 2 volunteered artifacts would be stored (cap not yet hit).
+    s = await _seed_session(db_session, "base")
+    gen = Generator(db_session, VolunteersArtifactClient(), batch_size=10)
+    await gen.run(s.id, plan=[("requirements", 10)])
+    await db_session.refresh(s)
+    assert s.status == "ready"
+    closed = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id, Question.type != "open"))).scalars().all()
+    assert len(closed) == 10
+    assert all(q.artifact_kind == "none" for q in closed)
+    assert all(q.artifact_content is None for q in closed)
+
+
 @pytest.mark.asyncio
 async def test_base_session_has_3_open_seed_plus_two_themed(db_session):
     s = await _seed_session(db_session, "base")

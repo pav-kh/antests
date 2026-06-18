@@ -136,12 +136,16 @@ class Generator:
                             continue
                         seen_stems.add(norm)
                         seq += 1
-                        # Enforce the 20% cap: if this question carries an
-                        # artifact but we're already at the ceiling, store it as
-                        # text-only so artifacts never exceed the cap.
+                        # Enforce artifact policy. The model may volunteer an
+                        # artifact even when we didn't request one, so strip it
+                        # when (a) the level disallows artifacts entirely (empty
+                        # artifact_topics, e.g. base/specialist), or (b) we're
+                        # already at the 20% ceiling. Otherwise store as-is.
                         kind = q.artifact_kind
                         content = q.artifact_content
-                        if kind != "none" and artifact_count >= artifact_cap:
+                        if kind != "none" and (
+                            not artifact_topics or artifact_count >= artifact_cap
+                        ):
                             kind, content = "none", None
                         self.db.add(Question(
                             session_id=session.id, seq=seq, topic_id=topic_id,
