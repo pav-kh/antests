@@ -29,6 +29,11 @@ export default function ResultsPage() {
 
   return (
     <div style={{ maxWidth: 820, margin: "32px auto", padding: "0 16px" }}>
+      <div style={{ marginBottom: 16 }}>
+        <button className="btn btn-ghost" onClick={() => router.push("/dashboard")}>
+          ← На главную
+        </button>
+      </div>
       <div className="card" style={{ textAlign: "center" }}>
         <div className="label">Результат теста</div>
         <div style={{ fontSize: 44, fontWeight: 800, color: results.passed ? "#18b27e" : "#e0556b" }}>
