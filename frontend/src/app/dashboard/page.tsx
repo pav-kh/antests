@@ -44,9 +44,9 @@ export default function DashboardPage() {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="label">Уровень</div>
         <div style={{ display: "flex", gap: 10, margin: "8px 0 16px" }}>
-          {(["base", "specialist"] as Level[]).map((l) => (
+          {(["base", "specialist", "ba"] as Level[]).map((l) => (
             <button key={l} className={`btn ${level === l ? "" : "btn-ghost"}`} onClick={() => setLevel(l)}>
-              {l === "base" ? "Базовый" : "Специалист"}
+              {l === "base" ? "Базовый" : l === "specialist" ? "Специалист" : "Бизнес-анализ"}
             </button>
           ))}
         </div>

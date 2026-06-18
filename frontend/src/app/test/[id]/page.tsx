@@ -135,7 +135,7 @@ export default function ExamPage() {
       <main style={{ padding: "26px 32px", minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div style={{ fontWeight: 700, color: "#1f3a5f" }}>
-            {status.level === "base" ? "Базовый" : "Специалист"} · {status.mode === "exam" ? "Экзамен" : "Тренировка"}
+            {status.level === "base" ? "Базовый" : status.level === "specialist" ? "Специалист" : "Бизнес-анализ"} · {status.mode === "exam" ? "Экзамен" : "Тренировка"}
           </div>
           <Timer startedAt={status.timer_started_at} limitSec={status.time_limit_sec} onExpire={finish} />
         </div>

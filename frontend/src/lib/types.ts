@@ -1,4 +1,4 @@
-export type Level = "base" | "specialist";
+export type Level = "base" | "specialist" | "ba";
 export type Mode = "exam" | "adaptive";
 export type SessionStatus = "generating" | "ready" | "in_progress" | "finished" | "failed";
 export type ArtifactKind = "none" | "code" | "json" | "sql" | "xml" | "mermaid";
