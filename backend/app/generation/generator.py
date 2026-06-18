@@ -19,18 +19,37 @@ ARTIFACT_TOPICS = {
     "data", "integration", "modeling", "architecture", "fundamentals", "security",
 }
 
-# Per-level override of artifact-friendly topics. ba (business analysis) only
-# gets diagrams on modeling/process_analysis — no SQL/JSON/XML, which are
-# system-analyst material. Levels absent here use ARTIFACT_TOPICS.
-LEVEL_ARTIFACT_TOPICS = {"ba": {"modeling", "process_analysis"}}
+# Per-level override of artifact-friendly topics. ba only gets diagrams on
+# modeling/process_analysis; base/specialist get NO artifacts (empty set) — code
+# and data artifacts lost their pedagogical value there. Levels absent here use
+# ARTIFACT_TOPICS.
+LEVEL_ARTIFACT_TOPICS = {
+    "ba": {"modeling", "process_analysis"},
+    "base": set(),
+    "specialist": set(),
+}
 # Levels whose artifacts must be Mermaid diagrams only (no sql/json/xml/code).
 LEVEL_ARTIFACT_MERMAID_ONLY = {"ba"}
 
-# How many open-question candidates the LLM generates. Pool = seed + this; we
-# sample OPEN_PER_SESSION. 3 gives variety (sometimes both real, sometimes a
-# mix) without extra cost. Raise as the seed pool grows.
+# How many LLM candidates the pool-based open generation produces (ba only).
 LLM_OPEN_CANDIDATES = 3
-OPEN_PER_SESSION = 2
+# Open questions per session, per level. base/specialist=3, ba=2, default 2.
+LEVEL_OPEN_COUNT = {"base": 3, "specialist": 3, "ba": 2}
+DEFAULT_OPEN_COUNT = 2
+# Themed open questions for base/specialist: (topic_title, hint). Each is one
+# LLM-generated open question via generate_open_on_topic.
+OPEN_TOPICS_BASE_SPEC = [
+    ("Описание интеграции",
+     "Опиши, как ты подойдёшь к описанию интеграции между системами: какие "
+     "требования к интеграции собрать, какие уточняющие вопросы задать (формат, "
+     "протокол, объёмы, SLA, ошибки), какие критерии приёмки зафиксировать и "
+     "какие риски/ошибки учесть (сбои, задержки, недоступность внешней системы, "
+     "идемпотентность, ретраи)."),
+    ("Системное мышление",
+     "Кейс на системное мышление: декомпозиция задачи, выявление связей и "
+     "зависимостей между компонентами, границы системы, причинно-следственные "
+     "связи, целостный взгляд на проблему вместо локального."),
+]
 
 
 def _sample_open_pool(pool, k, rng):
@@ -166,22 +185,34 @@ class Generator:
                 q.seq = new_seq
             await self.db.commit()
 
-            # Build a pool of open-question candidates (fixed real cases + LLM)
-            # and sample OPEN_PER_SESSION of them. seq after the closed pool; a
-            # failure in LLM generation just shrinks the pool to the seed cases,
-            # so the session still gets its open questions. The whole block must
-            # not block readiness — open questions are a bonus section.
+            # Append open (free-text) questions after the closed pool. base/
+            # specialist get a fixed mix (1 random seed + 1 themed «интеграция» +
+            # 1 themed «системное мышление»); ba keeps the seed+LLM pool. A
+            # failure in any single open question degrades softly (skip it) — open
+            # questions are a bonus section and must not block readiness.
             try:
-                pool = list(SEED_OPEN_QUESTIONS)
-                try:
-                    pool += await self.client.generate_open_questions(
-                        session.level, count=LLM_OPEN_CANDIDATES)
-                except Exception:
-                    logger.exception(
-                        "LLM open-question generation failed for session %s "
-                        "(falling back to seed pool)", session_id)
                 rng = random.Random(str(session.id))
-                chosen = _sample_open_pool(pool, OPEN_PER_SESSION, rng)
+                if session.level in ("base", "specialist"):
+                    chosen = [rng.choice(SEED_OPEN_QUESTIONS)]
+                    for topic_title, hint in OPEN_TOPICS_BASE_SPEC:
+                        try:
+                            chosen.append(
+                                await self.client.generate_open_on_topic(topic_title, hint))
+                        except Exception:
+                            logger.exception(
+                                "Themed open question '%s' failed for session %s",
+                                topic_title, session_id)
+                else:
+                    open_count = LEVEL_OPEN_COUNT.get(session.level, DEFAULT_OPEN_COUNT)
+                    pool = list(SEED_OPEN_QUESTIONS)
+                    try:
+                        pool += await self.client.generate_open_questions(
+                            session.level, count=LLM_OPEN_CANDIDATES)
+                    except Exception:
+                        logger.exception(
+                            "LLM open-question generation failed for session %s "
+                            "(falling back to seed pool)", session_id)
+                    chosen = _sample_open_pool(pool, open_count, rng)
                 for oq in chosen:
                     seq += 1
                     self.db.add(Question(
