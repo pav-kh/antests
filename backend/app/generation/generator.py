@@ -50,6 +50,9 @@ OPEN_TOPICS_BASE_SPEC = [
      "зависимостей между компонентами, границы системы, причинно-следственные "
      "связи, целостный взгляд на проблему вместо локального."),
 ]
+# Levels that use the fixed themed-open composition (1 random seed + the themed
+# questions above). Levels absent here use the seed+LLM pool (e.g. ba).
+LEVEL_OPEN_THEMED = {"base": OPEN_TOPICS_BASE_SPEC, "specialist": OPEN_TOPICS_BASE_SPEC}
 
 
 def _sample_open_pool(pool, k, rng):
@@ -186,15 +189,16 @@ class Generator:
             await self.db.commit()
 
             # Append open (free-text) questions after the closed pool. base/
-            # specialist get a fixed mix (1 random seed + 1 themed «интеграция» +
+            # specialist get a fixed mix (1 session-seeded seed case + 1 themed «интеграция» +
             # 1 themed «системное мышление»); ba keeps the seed+LLM pool. A
             # failure in any single open question degrades softly (skip it) — open
             # questions are a bonus section and must not block readiness.
             try:
                 rng = random.Random(str(session.id))
-                if session.level in ("base", "specialist"):
+                themed = LEVEL_OPEN_THEMED.get(session.level)
+                if themed is not None:
                     chosen = [rng.choice(SEED_OPEN_QUESTIONS)]
-                    for topic_title, hint in OPEN_TOPICS_BASE_SPEC:
+                    for topic_title, hint in themed:
                         try:
                             chosen.append(
                                 await self.client.generate_open_on_topic(topic_title, hint))
