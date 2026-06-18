@@ -47,4 +47,21 @@ describe("parseOpenStem", () => {
     expect(p.case).toContain("Вторая строка");
     expect(p.task).toBe("Опишите интеграцию.");
   });
+
+  it("parses with an empty answerHint when no 'Ответ:' line is present", () => {
+    const stem = [
+      "Тип: открытый кейс. Описание интеграции",
+      "",
+      "Кейс про интеграцию.",
+      "",
+      "Задание: Опишите интеграцию.",
+      "Фокус ответа: Не пишите код.",
+      "Критерии оценки: полнота; риски.",
+    ].join("\n");
+    const p = parseOpenStem(stem);
+    expect(p).not.toBeNull();
+    expect(p!.answerHint).toBe("");
+    expect(p!.topicTitle).toBe("Описание интеграции");
+    expect(p!.case).toContain("Кейс про интеграцию");
+  });
 });

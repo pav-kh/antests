@@ -20,7 +20,9 @@ const CRITERIA = "Критерии оценки:";
  *
  * Anchors appear in a fixed order: Ответ → Тип → case → Задание → Фокус → Критерии.
  * Each section runs from the FIRST occurrence of its anchor to the start of the
- * next anchor, so a stray label-like word inside the case can't break parsing.
+ * next anchor. (Known limitation: a coincidental label word inside the case
+ * could shift a section boundary — it never breaks the null/order guards, only
+ * which text lands in a section. build_open_stem never emits such input.)
  */
 export function parseOpenStem(stem: string): ParsedOpenStem | null {
   const iType = stem.indexOf(TYPE);
