@@ -5,7 +5,7 @@ import { api, isUnauthorized } from "@/lib/api";
 import { QuestionCard } from "@/components/QuestionCard";
 import { QuestionNav } from "@/components/QuestionNav";
 import { Timer } from "@/components/Timer";
-import { toggleSelection, isQuestionReady, answeredCount, type AnswerMap } from "@/lib/examState";
+import { toggleSelection, isQuestionReady, countAnswered, type AnswerMap } from "@/lib/examState";
 import type { Question, SessionStatusResponse } from "@/lib/types";
 
 export default function ExamPage() {
@@ -114,7 +114,7 @@ export default function ExamPage() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "250px 1fr", minHeight: "100vh" }}>
       <aside style={{ background: "#fff", borderRight: "1px solid #e4e9f0", padding: 18 }}>
-        <div className="label">Вопросы · {status.total_questions}</div>
+        <div className="label">Вопросы · {maxSeq}</div>
         <div style={{ margin: "10px 0" }}>
           <QuestionNav
             total={status.total_questions}
@@ -126,7 +126,7 @@ export default function ExamPage() {
           />
         </div>
         <div className="label" style={{ marginTop: 12 }}>
-          Отвечено: {answeredCount(answers)} / {status.total_questions}
+          Отвечено: {countAnswered(questions, answers, openText)} / {maxSeq}
         </div>
       </aside>
 
