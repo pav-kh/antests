@@ -27,6 +27,18 @@ describe("OpenStem", () => {
     expect(screen.getByText(/2500 знаков/)).toBeInTheDocument();
   });
 
+  it("renders the case as normal weight (not a bold blob) and the hint muted", () => {
+    render(<OpenStem stem={STEM} />);
+    // The whole point of the change: case text is NOT bold.
+    const caseEl = screen.getByText(/Компания внедряет сервис/);
+    expect(caseEl).not.toHaveStyle({ fontWeight: 700 });
+    // The answer-limit hint is muted.
+    const hint = screen.getByText(/2500 знаков/);
+    expect(hint).toHaveStyle({ color: "var(--muted)" });
+    // Block labels ARE bold.
+    expect(screen.getByText("Задание")).toHaveStyle({ fontWeight: 700 });
+  });
+
   it("falls back to raw text when the stem is not structured", () => {
     render(<OpenStem stem="Просто вопрос без меток." />);
     expect(screen.getByText("Просто вопрос без меток.")).toBeInTheDocument();

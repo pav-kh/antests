@@ -5,7 +5,7 @@ function Block({ label, body }: { label: string; body: string }) {
   if (!body) return null;
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontWeight: 700, color: "#1f3a5f", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontWeight: 700, color: "var(--ibs-navy)", marginBottom: 2 }}>{label}</div>
       <div style={{ whiteSpace: "pre-line" }}>{body}</div>
     </div>
   );
