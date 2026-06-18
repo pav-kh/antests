@@ -147,6 +147,28 @@ async def test_generate_open_questions_assembles_stem_from_parts():
 
 
 @pytest.mark.asyncio
+async def test_generate_open_on_topic_builds_one_question():
+    payload = {
+        "topic_title": "Описание интеграции",
+        "case": "Двум системам нужно обмениваться заявками.",
+        "task": "Опишите требования, уточняющие вопросы, критерии приёмки, риски.",
+        "focus": "Не проектируйте код; сфокусируйтесь на интеграционных аспектах.",
+        "criteria_visible": "полнота требований; качество вопросов; критерии приёмки; риски.",
+        "rubric": "Скрытые подробные критерии для судьи по интеграции.",
+        "explanation": "Проверяется системный подход к описанию интеграции.",
+    }
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_Client(json.dumps(payload)))
+    q = await client.generate_open_on_topic("Описание интеграции", "раскрой требования и критерии приёмки")
+    assert isinstance(q, OpenQuestion)
+    assert "Задание: Опишите требования" in q.stem
+    assert "Тип: открытый кейс. Описание интеграции" in q.stem
+    assert q.rubric == "Скрытые подробные критерии для судьи по интеграции."
+    assert q.rubric not in q.stem
+    assert q.explanation
+
+
+@pytest.mark.asyncio
 async def test_judge_open_returns_feedback():
     client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
                           _client=_Client("Хорошо, но упустили эскалацию."))

@@ -415,6 +415,80 @@ class OpenAIClient:
         assert last_err is not None  # loop ran ≥1 time, so this is always bound
         raise last_err
 
+    async def generate_open_on_topic(
+        self, topic_title: str, hint: str
+    ) -> OpenQuestion:
+        prompt = (
+            f"Сгенерируй 1 ОТКРЫТЫЙ вопрос-кейс по теме «{topic_title}» для "
+            "сертификации системного аналитика, в формате реального экзамена — "
+            "практическая ситуация, требующая развёрнутого текстового ответа (НЕ "
+            "выбор варианта), объёмом ответа до 2500 знаков с пробелами.\n"
+            f"Ориентир по содержанию: {hint}\n"
+            "Верни структурные части:\n"
+            "- topic_title: короткая тема кейса (используй данную тему);\n"
+            "- case: описание практической ситуации (2–4 предложения);\n"
+            "- task: что именно сделать, с числовыми рамками где уместно;\n"
+            "- focus: на чём сфокусироваться и что НЕ нужно делать;\n"
+            "- criteria_visible: краткие критерии оценки через точку с запятой "
+            "(показываются студенту);\n"
+            "- rubric: ПОДРОБНЫЕ скрытые критерии для проверяющего (студенту НЕ "
+            "показывается, детальнее criteria_visible);\n"
+            "- explanation: краткий разбор, что отличает сильный ответ.\n"
+            "Пиши по-русски. Верни СТРОГО JSON по схеме."
+        )
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "open_one",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "topic_title": {"type": "string"},
+                        "case": {"type": "string"},
+                        "task": {"type": "string"},
+                        "focus": {"type": "string"},
+                        "criteria_visible": {"type": "string"},
+                        "rubric": {"type": "string"},
+                        "explanation": {"type": "string"},
+                    },
+                    "required": [
+                        "topic_title", "case", "task", "focus",
+                        "criteria_visible", "rubric", "explanation",
+                    ],
+                },
+                "strict": True,
+            },
+        }
+        last_err: Exception | None = None
+        for _attempt in range(3):
+            try:
+                resp = await self._client.chat.completions.create(
+                    model=self.gen_model,
+                    messages=[
+                        {"role": "system",
+                         "content": "Ты — экзаменатор сертификации системных аналитиков IBS."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format=response_format,
+                )
+                item = _parse_json_content(resp)
+                return OpenQuestion(
+                    stem=build_open_stem(
+                        topic_title=item["topic_title"],
+                        case=item["case"],
+                        task=item["task"],
+                        focus=item["focus"],
+                        criteria_visible=item["criteria_visible"],
+                    ),
+                    rubric=item["rubric"],
+                    explanation=item["explanation"],
+                )
+            except Exception as e:  # noqa: BLE001 — retry on any failure, raise the last
+                last_err = e
+        assert last_err is not None  # loop ran ≥1 time, so this is always bound
+        raise last_err
+
     async def judge_open(self, stem: str, rubric: str, answer: str) -> str:
         prompt = (
             "Оцени ответ студента на открытый вопрос по сертификации СА и дай "
