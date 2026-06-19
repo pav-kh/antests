@@ -36,6 +36,11 @@ LLM_OPEN_CANDIDATES = 3
 # Open questions per session, per level. base/specialist=3, ba=2, default 2.
 LEVEL_OPEN_COUNT = {"base": 3, "specialist": 3, "ba": 2}
 DEFAULT_OPEN_COUNT = 2
+
+# Hard multi-quota: after closed generation, if the share of multi-answer
+# questions is below LEVEL_MULTI_TARGET, regenerate excess single questions as
+# multi — up to this many passes, then accept whatever we reached.
+MULTI_TOPUP_ROUNDS = 3
 # Themed open questions for base/specialist: (topic_title, hint). Each is one
 # LLM-generated open question via generate_open_on_topic.
 OPEN_TOPICS_BASE_SPEC = [
@@ -176,6 +181,13 @@ class Generator:
                     await self.db.commit()
                     return
 
+            # Hard multi-quota: the soft prompt instruction underdelivers, so
+            # after generating the closed pool, regenerate excess single
+            # questions as multi until we reach the target share (or run out of
+            # rounds — then accept what we have; never block readiness).
+            if multi_ratio:
+                await self._enforce_multi_quota(session, multi_ratio, seen_stems)
+
             # Shuffle the question order so artifacts and topics are interspersed
             # rather than clustered at the start (they're generated topic-by-topic,
             # and the artifact quota lands on the earliest artifact-friendly
@@ -246,6 +258,65 @@ class Generator:
             logger.exception("Generation failed for session %s", session_id)
             session.status = "failed"
             await self.db.commit()
+
+    async def _enforce_multi_quota(self, session, multi_ratio, seen_stems):
+        """Regenerate excess single closed questions as multi until the multi
+        share reaches `multi_ratio` (ceil of closed count) or MULTI_TOPUP_ROUNDS
+        passes are exhausted. Replaces a single's content in place (same row,
+        same seq, same topic) with a freshly generated multi question. Never
+        raises — a failed regeneration just leaves that single as-is."""
+        for _round in range(MULTI_TOPUP_ROUNDS):
+            closed = (await self.db.execute(
+                select(Question).where(
+                    Question.session_id == session.id,
+                    Question.type.in_(("single", "multi")),
+                ).order_by(Question.seq)
+            )).scalars().all()
+            total = len(closed)
+            if total == 0:
+                return
+            target = math.ceil(multi_ratio * total)
+            multi_count = sum(1 for q in closed if q.type == "multi")
+            if multi_count >= target:
+                return
+            singles = [q for q in closed if q.type == "single"]
+            converted_this_round = 0
+            for q in singles:
+                if multi_count >= target:
+                    break
+                try:
+                    batch = await self._generate_with_retry(
+                        session.level, session.mode, [(q.topic_id, 1)],
+                        avoid_stems=list(seen_stems)[-40:], want_artifact=False,
+                        multi_ratio=1.0,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Multi top-up generation failed for session %s", session.id)
+                    continue
+                new_q = next(
+                    (g for g in batch.questions if g.type == "multi"
+                     and len(g.correct_keys) >= 2), None)
+                if new_q is None:
+                    continue
+                norm = new_q.stem.strip().lower()
+                if norm in seen_stems:
+                    continue
+                # Convert the stored single into the new multi (keep seq/topic).
+                seen_stems.discard(q.stem.strip().lower())
+                seen_stems.add(norm)
+                q.type = "multi"
+                q.stem = new_q.stem
+                q.artifact_kind = "none"
+                q.artifact_content = None
+                q.options = [o.model_dump() for o in new_q.options]
+                q.correct_keys = new_q.correct_keys
+                q.explanation = new_q.explanation
+                multi_count += 1
+                converted_this_round += 1
+            await self.db.commit()
+            if converted_this_round == 0:
+                return  # no progress this round — stop, accept what we have
 
     async def _generate_with_retry(
         self, level, mode, slice_, avoid_stems=None, want_artifact=False,
