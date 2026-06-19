@@ -186,7 +186,8 @@ class Generator:
             # questions as multi until we reach the target share (or run out of
             # rounds — then accept what we have; never block readiness).
             if multi_ratio:
-                await self._enforce_multi_quota(session, multi_ratio, seen_stems)
+                await self._enforce_multi_quota(
+                    session, multi_ratio, seen_stems, recent_stems)
 
             # Shuffle the question order so artifacts and topics are interspersed
             # rather than clustered at the start (they're generated topic-by-topic,
@@ -259,13 +260,16 @@ class Generator:
             session.status = "failed"
             await self.db.commit()
 
-    async def _enforce_multi_quota(self, session, multi_ratio, seen_stems):
+    async def _enforce_multi_quota(self, session, multi_ratio, seen_stems, recent_stems):
         """Regenerate excess single closed questions as multi until the multi
         share reaches `multi_ratio` (ceil of closed count) or MULTI_TOPUP_ROUNDS
         passes are exhausted. Replaces a single's content in place (same row,
         same seq, same topic) with a freshly generated multi question. Never
         raises — a failed regeneration just leaves that single as-is."""
         for _round in range(MULTI_TOPUP_ROUNDS):
+            # Intentional per-round re-SELECT: re-reads the pool so this round
+            # picks up the previous round's conversions (updated multi_count and
+            # the shrunken set of remaining singles).
             closed = (await self.db.execute(
                 select(Question).where(
                     Question.session_id == session.id,
@@ -287,7 +291,7 @@ class Generator:
                 try:
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(q.topic_id, 1)],
-                        avoid_stems=list(seen_stems)[-40:], want_artifact=False,
+                        avoid_stems=recent_stems[-40:], want_artifact=False,
                         multi_ratio=1.0,
                     )
                 except Exception:
@@ -298,6 +302,11 @@ class Generator:
                     (g for g in batch.questions if g.type == "multi"
                      and len(g.correct_keys) >= 2), None)
                 if new_q is None:
+                    continue
+                # Validate converted multis with the SAME gate the main loop
+                # uses — converted multis can be the majority of the pool, so a
+                # structural check alone is not enough; reject invalid ones.
+                if not (await self.client.validate_question(new_q)).valid:
                     continue
                 norm = new_q.stem.strip().lower()
                 if norm in seen_stems:
@@ -314,6 +323,11 @@ class Generator:
                 q.explanation = new_q.explanation
                 multi_count += 1
                 converted_this_round += 1
+                # Keep recent_stems updated so subsequent converts in this/next
+                # round avoid the just-added stem (cap to the last 40).
+                recent_stems.append(new_q.stem)
+                if len(recent_stems) > 40:
+                    del recent_stems[: len(recent_stems) - 40]
             await self.db.commit()
             if converted_this_round == 0:
                 return  # no progress this round — stop, accept what we have

@@ -53,6 +53,18 @@ class AlwaysSingleClient(SingleThenMultiClient):
         return GeneratedBatch(questions=[_q(tid, "single", ["a"]) for _ in range(n)])
 
 
+class BadMultiClient(SingleThenMultiClient):
+    """Top-up returns multi questions that FAIL validation — they must be
+    rejected, so the share does NOT reach target and the session still readies."""
+    async def validate_question(self, q):
+        from app.generation.schemas import ValidationVerdict
+        # Reject the multi top-up candidates (they have >=2 correct keys);
+        # accept the initial singles (1 correct key) so generation completes.
+        if q.type == "multi":
+            return ValidationVerdict(valid=False, reason="bad")
+        return ValidationVerdict(valid=True, reason="ok")
+
+
 async def _seed(db, level="base"):
     user = User(login=f"u{uuid.uuid4().hex[:8]}", password_hash="x")
     db.add(user)
@@ -82,6 +94,10 @@ async def test_topup_converts_singles_to_reach_70pct(db_session):
     assert len(multi) >= math.ceil(0.7 * 10)  # >= 7
     # converted multis are valid (>=2 correct keys)
     assert all(len(q.correct_keys) >= 2 for q in multi)
+    # convert preserves topic and strips artifacts; seq stays a clean 1..N set
+    assert all(q.topic_id == "requirements" for q in closed)
+    assert all(q.artifact_kind == "none" for q in closed)
+    assert sorted(q.seq for q in closed) == list(range(1, 11))
 
 
 @pytest.mark.asyncio
@@ -96,6 +112,21 @@ async def test_topup_accepts_when_model_keeps_returning_single(db_session):
         select(Question).where(Question.session_id == s.id,
                                Question.type.in_(("single", "multi"))))).scalars().all()
     assert len(closed) == 10  # total preserved
+
+
+@pytest.mark.asyncio
+async def test_topup_rejects_invalid_multis(db_session):
+    s = await _seed(db_session, "base")
+    gen = Generator(db_session, BadMultiClient(), batch_size=10)
+    await gen.run(s.id, plan=[("requirements", 10)])
+    await db_session.refresh(s)
+    assert s.status == "ready"  # invalid converts rejected, still readies
+    closed = (await db_session.execute(
+        select(Question).where(Question.session_id == s.id,
+                               Question.type.in_(("single", "multi"))))).scalars().all()
+    assert len(closed) == 10  # total preserved
+    # no multi got through validation -> they stay single
+    assert all(q.type == "single" for q in closed)
 
 
 @pytest.mark.asyncio
