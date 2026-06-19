@@ -247,15 +247,24 @@ class OpenAIClient:
                 )
         if multi_ratio:
             pct = round(multi_ratio * 100)
-            user_prompt += (
-                f"\n\nКРИТИЧЕСКИ ВАЖНО про тип вопросов: БОЛЬШИНСТВО — не менее {pct}% "
-                "вопросов в этом наборе — ДОЛЖНЫ быть типа multi (несколько верных "
-                "вариантов: обычно 2–3 правильных из 4–5, в correct_keys перечисли ВСЕ "
-                "верные). Это жёсткое требование, а не пожелание. Только меньшая часть "
-                "может быть single (ровно один верный). НЕ делай почти все вопросы "
-                "single. Multi-вопросы должны быть честными: несколько вариантов "
-                "действительно корректны, а не искусственно добавлены."
-            )
+            if multi_ratio >= 1.0:
+                # Top-up regeneration of a single -> multi: be insistent.
+                user_prompt += (
+                    "\n\nКРИТИЧЕСКИ ВАЖНО: этот вопрос ДОЛЖЕН быть типа multi — "
+                    "несколько верных вариантов (обычно 2–3 правильных из 4–5), в "
+                    "correct_keys перечисли ВСЕ верные. НЕ делай его single. Варианты "
+                    "должны быть честными: несколько действительно корректны."
+                )
+            else:
+                # Main generation loop: gentle steering so the validator doesn't
+                # reject too many and starve a topic. The hard quota (top-up)
+                # tops the multi share up afterwards.
+                user_prompt += (
+                    f"\n\nЖелательно, чтобы около {pct}% вопросов в этом наборе были "
+                    "типа multi (несколько верных вариантов, обычно 2–3 из 4–5; в "
+                    "correct_keys перечисли все верные), остальные — single (ровно "
+                    "один верный). Multi-вопросы делай честными."
+                )
         resp = await self._client.chat.completions.create(
             model=self.gen_model,
             messages=[

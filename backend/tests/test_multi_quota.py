@@ -67,3 +67,12 @@ async def test_generate_batch_no_multi_instruction_when_ratio_none():
                           _client=_CaptureClient(comp))
     await client.generate_batch("base", "exam", [("requirements", 1)])
     assert "несколько верных" not in (comp.last_user_prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_topup_uses_insistent_wording():
+    comp = _CaptureCompletions(_VALID_BATCH)
+    client = OpenAIClient(api_key="x", gen_model="g", validate_model="v",
+                          _client=_CaptureClient(comp))
+    await client.generate_batch("base", "exam", [("requirements", 1)], multi_ratio=1.0)
+    assert "ДОЛЖЕН быть типа multi" in comp.last_user_prompt
