@@ -283,7 +283,14 @@ class Generator:
             multi_count = sum(1 for q in closed if q.type == "multi")
             if multi_count >= target:
                 return
-            singles = [q for q in closed if q.type == "single"]
+            # Prefer converting artifact-free singles first, so a ba single that
+            # carries a legit Mermaid diagram is only sacrificed if no plainer
+            # single is available (conversion strips the artifact). base/
+            # specialist singles never carry artifacts, so this is a no-op there.
+            singles = sorted(
+                (q for q in closed if q.type == "single"),
+                key=lambda q: q.artifact_kind != "none",
+            )
             converted_this_round = 0
             for q in singles:
                 if multi_count >= target:
