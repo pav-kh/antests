@@ -32,11 +32,15 @@ LEVEL_ARTIFACT_TOPICS = {
 
 # Phrases a stem uses to point at an attached artifact (diagram/schema/code/etc.).
 # Used to drop a question whose artifact we had to strip — otherwise the stem
-# would reference something the user can't see.
+# would reference something the user can't see. ниже/выше must sit next to an
+# artifact noun ("на схеме ниже", "ниже приведена диаграмма"), NOT stand alone —
+# bare "ниже среднего"/"выше нормы" are ordinary comparatives, not references.
+_ARTIFACT_NOUN = r"(?:диаграмм\w*|схем\w*|рисунк\w*|запрос\w*|код\w*|модел\w*)"
 _ARTIFACT_REF_RE = re.compile(
     r"привед[её]нн|на\s+диаграмме|на\s+схеме|на\s+рисунке|показанн|изображённ|"
-    r"изображенн|ниже\b|выше\b|в\s+запросе\s+ниже|в\s+коде\s+ниже|следующ(ей|ем)\s+"
-    r"(диаграмм|схем|запрос|коде)",
+    r"изображенн|следующ(?:ей|ем)\s+" + _ARTIFACT_NOUN
+    + r"|" + _ARTIFACT_NOUN + r"\s+(?:ниже|выше)"
+    + r"|(?:ниже|выше)\s+(?:привед\w*\s+)?" + _ARTIFACT_NOUN,
     re.IGNORECASE,
 )
 

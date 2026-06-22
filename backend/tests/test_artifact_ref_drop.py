@@ -27,9 +27,15 @@ def test_detector_flags_diagram_references():
     assert _stem_references_artifact("Какие элементы на приведённой диаграмме относятся к событиям?")
     assert _stem_references_artifact("Что на приведённой схеме моделирует переход?")
     assert _stem_references_artifact("Найдите ошибку в показанном запросе.")
+    # artifact noun + ниже/выше (in either order) IS a reference
+    assert _stem_references_artifact("На схеме ниже найдите событие.")
+    assert _stem_references_artifact("Ниже приведена диаграмма; что она моделирует?")
     # conceptual questions about diagrams in general are NOT flagged
-    assert not _stem_references_artifact("Чем диаграмма состояний отличается от диаграммы活ности?".replace("活ности","активности"))
+    assert not _stem_references_artifact("Чем диаграмма состояний отличается от диаграммы активности?")
     assert not _stem_references_artifact("Какой тип UML-диаграммы описывает поведение во времени?")
+    # bare comparatives ниже/выше must NOT trigger a false positive
+    assert not _stem_references_artifact("Какие требования имеют приоритет ниже среднего?")
+    assert not _stem_references_artifact("Что делать, если нагрузка выше нормы?")
 
 
 class DanglingThenCleanClient:
