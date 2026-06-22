@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import random
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,22 @@ LEVEL_ARTIFACT_TOPICS = {
     "base": set(),
     "specialist": set(),
 }
+
+# Phrases a stem uses to point at an attached artifact (diagram/schema/code/etc.).
+# Used to drop a question whose artifact we had to strip — otherwise the stem
+# would reference something the user can't see.
+_ARTIFACT_REF_RE = re.compile(
+    r"привед[её]нн|на\s+диаграмме|на\s+схеме|на\s+рисунке|показанн|изображённ|"
+    r"изображенн|ниже\b|выше\b|в\s+запросе\s+ниже|в\s+коде\s+ниже|следующ(ей|ем)\s+"
+    r"(диаграмм|схем|запрос|коде)",
+    re.IGNORECASE,
+)
+
+
+def _stem_references_artifact(stem: str) -> bool:
+    """True if the stem points at an attached artifact (e.g. 'на приведённой
+    диаграмме'). Used to avoid storing a question whose artifact was stripped."""
+    return bool(_ARTIFACT_REF_RE.search(stem))
 # Levels whose artifacts must be Mermaid diagrams only (no sql/json/xml/code).
 LEVEL_ARTIFACT_MERMAID_ONLY = {"ba"}
 
@@ -99,6 +116,7 @@ class Generator:
             artifact_topics_used = set()
             multi_ratio = LEVEL_MULTI_TARGET.get(session.level)
             artifact_topics = LEVEL_ARTIFACT_TOPICS.get(session.level, ARTIFACT_TOPICS)
+            artifacts_disabled = not artifact_topics
             mermaid_only = session.level in LEVEL_ARTIFACT_MERMAID_ONLY
             # SESSION-WIDE dedup: a stem seen in ANY topic blocks an identical one
             # later, and we feed recently-generated stems back to the model so it
@@ -129,6 +147,7 @@ class Generator:
                         session.level, session.mode, [(topic_id, take)],
                         avoid_stems=recent_stems, want_artifact=want_artifact,
                         multi_ratio=multi_ratio, mermaid_only=mermaid_only,
+                        artifacts_disabled=artifacts_disabled,
                     )
                     for q in batch.questions:
                         if needed <= 0:
@@ -140,18 +159,25 @@ class Generator:
                         if norm in seen_stems:
                             continue
                         seen_stems.add(norm)
-                        seq += 1
                         # Enforce artifact policy. The model may volunteer an
-                        # artifact even when we didn't request one, so strip it
-                        # when (a) the level disallows artifacts entirely (empty
-                        # artifact_topics, e.g. base/specialist), or (b) we're
-                        # already at the 20% ceiling. Otherwise store as-is.
+                        # artifact even when we didn't request one. Strip it when
+                        # the level disallows artifacts (empty artifact_topics) or
+                        # we're at the 20% ceiling.
                         kind = q.artifact_kind
                         content = q.artifact_content
-                        if kind != "none" and (
+                        must_strip = kind != "none" and (
                             not artifact_topics or artifact_count >= artifact_cap
-                        ):
+                        )
+                        if must_strip and _stem_references_artifact(q.stem):
+                            # Stem points at an artifact we can't keep -> the
+                            # question would be unanswerable. Drop it and let the
+                            # topic refill loop generate another. (Roll back the
+                            # dedup add so an equivalent stem isn't blocked.)
+                            seen_stems.discard(norm)
+                            continue
+                        if must_strip:
                             kind, content = "none", None
+                        seq += 1
                         self.db.add(Question(
                             session_id=session.id, seq=seq, topic_id=topic_id,
                             type=q.type, stem=q.stem, artifact_kind=kind,
@@ -266,6 +292,8 @@ class Generator:
         passes are exhausted. Replaces a single's content in place (same row,
         same seq, same topic) with a freshly generated multi question. Never
         raises — a failed regeneration just leaves that single as-is."""
+        artifacts_disabled = not LEVEL_ARTIFACT_TOPICS.get(
+            session.level, ARTIFACT_TOPICS)
         for _round in range(MULTI_TOPUP_ROUNDS):
             # Intentional per-round re-SELECT: re-reads the pool so this round
             # picks up the previous round's conversions (updated multi_count and
@@ -299,7 +327,7 @@ class Generator:
                     batch = await self._generate_with_retry(
                         session.level, session.mode, [(q.topic_id, 1)],
                         avoid_stems=recent_stems[-40:], want_artifact=False,
-                        multi_ratio=1.0,
+                        multi_ratio=1.0, artifacts_disabled=artifacts_disabled,
                     )
                 except Exception:
                     logger.exception(
@@ -317,6 +345,10 @@ class Generator:
                     continue
                 norm = new_q.stem.strip().lower()
                 if norm in seen_stems:
+                    continue
+                # The converted multi is stored artifact-free; if its stem
+                # references a diagram/artifact it would be unanswerable — skip.
+                if _stem_references_artifact(new_q.stem):
                     continue
                 # Convert the stored single into the new multi (keep seq/topic).
                 seen_stems.discard(q.stem.strip().lower())
@@ -341,7 +373,7 @@ class Generator:
 
     async def _generate_with_retry(
         self, level, mode, slice_, avoid_stems=None, want_artifact=False,
-        multi_ratio=None, mermaid_only=False,
+        multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
     ):
         delay = 0.0
         last = None
@@ -351,6 +383,7 @@ class Generator:
                     level, mode, slice_,
                     avoid_stems=avoid_stems, want_artifact=want_artifact,
                     multi_ratio=multi_ratio, mermaid_only=mermaid_only,
+                    artifacts_disabled=artifacts_disabled,
                 )
             except Exception as e:  # noqa: BLE001
                 last = e

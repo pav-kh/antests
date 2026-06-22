@@ -179,7 +179,7 @@ class OpenAIClient:
 
     async def generate_batch(
         self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-        multi_ratio=None, mermaid_only=False,
+        multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
     ):
         topic_lines = []
         for tid, count in plan_slice:
@@ -196,6 +196,15 @@ class OpenAIClient:
             user_prompt += (
                 "\n\nНЕ ПОВТОРЯЙ и не перефразируй эти уже созданные вопросы — "
                 "сгенерируй ДРУГИЕ, по другим аспектам темы:\n" + avoid_block
+            )
+        if artifacts_disabled:
+            user_prompt += (
+                "\n\nВАЖНО: НЕ прикладывай артефакты (диаграммы, SQL, JSON, XML, код) "
+                "и НЕ ссылайся в формулировке на приведённую/показанную диаграмму, "
+                "схему, рисунок или код («на приведённой диаграмме…», «на схеме ниже…» "
+                "ЗАПРЕЩЕНЫ). Задавай вопрос концептуально, понятный без вложений: "
+                "проверяй знание понятий, нотаций и правил, а не чтение конкретной "
+                "картинки."
             )
         if want_artifact:
             if mermaid_only:

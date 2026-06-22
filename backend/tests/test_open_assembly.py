@@ -26,7 +26,7 @@ def _closed(topic_id):
 
 class FakeClient:
     async def generate_batch(self, level, mode, plan_slice, avoid_stems=None,
-                             want_artifact=False, multi_ratio=None, mermaid_only=False):
+                             want_artifact=False, multi_ratio=None, mermaid_only=False, artifacts_disabled=False):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_closed(plan_slice[0][0]) for _ in range(n)])
 
@@ -72,7 +72,7 @@ class VolunteersArtifactClient(FakeClient):
     ask for. On an artifacts-off level it must be stripped to text-only."""
 
     async def generate_batch(self, level, mode, plan_slice, avoid_stems=None,
-                             want_artifact=False, multi_ratio=None, mermaid_only=False):
+                             want_artifact=False, multi_ratio=None, mermaid_only=False, artifacts_disabled=False):
         n = sum(c for _, c in plan_slice)
         tid = plan_slice[0][0]
         out = []

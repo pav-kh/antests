@@ -27,7 +27,7 @@ class SingleThenMultiClient:
     """Initial generation returns all SINGLE; top-up calls (multi_ratio==1.0)
     return MULTI. Lets us verify the top-up converts singles to multi."""
     async def generate_batch(self, level, mode, plan_slice, avoid_stems=None,
-                             want_artifact=False, multi_ratio=None, mermaid_only=False):
+                             want_artifact=False, multi_ratio=None, mermaid_only=False, artifacts_disabled=False):
         n = sum(c for _, c in plan_slice)
         tid = plan_slice[0][0]
         if multi_ratio == 1.0:
@@ -47,7 +47,7 @@ class SingleThenMultiClient:
 class AlwaysSingleClient(SingleThenMultiClient):
     """Even top-up returns single — exercises the round budget + accept fallback."""
     async def generate_batch(self, level, mode, plan_slice, avoid_stems=None,
-                             want_artifact=False, multi_ratio=None, mermaid_only=False):
+                             want_artifact=False, multi_ratio=None, mermaid_only=False, artifacts_disabled=False):
         n = sum(c for _, c in plan_slice)
         tid = plan_slice[0][0]
         return GeneratedBatch(questions=[_q(tid, "single", ["a"]) for _ in range(n)])

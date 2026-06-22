@@ -54,7 +54,7 @@ class FakeClient:
 
     async def generate_batch(
         self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-        multi_ratio=None, mermaid_only=False,
+        multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
     ):
         n = sum(c for _, c in plan_slice)
         return GeneratedBatch(questions=[_q(plan_slice[0][0]) for _ in range(n)])
@@ -121,7 +121,7 @@ async def test_generator_completes_when_model_returns_topic_title_not_key(db_ses
     class TitleEchoClient(FakeClient):
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             n = sum(c for _, c in plan_slice)
             title = get_topic(plan_slice[0][0]).title  # model echoes the TITLE
@@ -180,7 +180,7 @@ async def test_generator_dedupes_repeated_stems_per_topic(db_session):
 
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             self._calls += 1
             n = sum(c for _, c in plan_slice)
@@ -217,7 +217,7 @@ async def test_generator_dedupes_across_topics(db_session):
 
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             self._calls += 1
             tid = plan_slice[0][0]
@@ -261,7 +261,7 @@ async def test_generator_meets_artifact_quota(db_session):
 
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             self._calls += 1
             tid = plan_slice[0][0]
@@ -304,7 +304,7 @@ async def test_generator_shuffles_seq_and_spreads_artifacts(db_session):
 
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             self._calls += 1
             tid = plan_slice[0][0]
@@ -395,7 +395,7 @@ async def test_generator_caps_artifacts_at_20_percent(db_session):
 
         async def generate_batch(
             self, level, mode, plan_slice, avoid_stems=None, want_artifact=False,
-            multi_ratio=None, mermaid_only=False,
+            multi_ratio=None, mermaid_only=False, artifacts_disabled=False,
         ):
             self._calls += 1
             tid = plan_slice[0][0]
